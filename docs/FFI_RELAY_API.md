@@ -28,15 +28,9 @@ with C FFI support.
 |-----:|---------|
 | `0` | Success |
 | `-1` | Invalid input parameter |
-| `-2` | Cryptographic operation failed |
-| `-3` | Protocol message has invalid format/length |
-| `-4` | Validation failed (state expired or wrong phase) |
-| `-5` | Authentication failed (wrong password or tampered MAC) |
-| `-6` | Invalid public key |
+| `-5` | Authentication/protocol validation failed |
 | `-7` | Account already registered |
-| `-8` | Malformed ML-KEM key or ciphertext |
-| `-9` | Envelope has invalid format |
-| `-10` | Unsupported protocol version |
+| `-101` | Provided credentials record is malformed |
 | `-99` | Internal panic (should never happen) |
 | `-100` | Handle is busy (concurrent call rejected) |
 
@@ -88,8 +82,7 @@ concurrently from different threads.
 │                                                      │
 │ ◄─── receive ke1[1273] + account_id from client      │
 │                                                      │
-│ Load credentials[169] from DB (or pass NULL if       │
-│ account not found — fake credentials are generated)  │
+│ Load credentials[169] from DB (required)             │
 │                                                      │
 │ opaque_relay_state_create(&state_handle)              │
 │                                                      │
@@ -97,7 +90,7 @@ concurrently from different threads.
 │     relay_handle,                                    │
 │     ke1, 1273,                                       │
 │     account_id, account_id_len,                      │
-│     credentials_or_null, cred_len_or_0,              │
+│     credentials, 169,                                │
 │     &ke2[1377], 1377,                                │
 │     state_handle)                                    │
 │                                                      │
@@ -151,6 +144,23 @@ void opaque_relay_keypair_destroy(void **handle_ptr);
 
 Destroys a keypair handle, securely zeroizing the private key and OPRF seed.
 Sets `*handle_ptr` to NULL.
+
+---
+
+### opaque_relay_keypair_try_destroy
+
+```c
+int32_t opaque_relay_keypair_try_destroy(void **handle_ptr);
+```
+
+Tries to destroy a keypair handle and reports the outcome.
+
+**Returns:**
+- `0` on success (or already NULL).
+- `-1` if `handle_ptr` is NULL.
+- `-100` if the handle is currently busy.
+
+Use this in production cleanup paths where silent destroy failure is unacceptable.
 
 ---
 
@@ -225,7 +235,7 @@ All three components must be the same ones used during registration.
 | `oprf_seed_len` | `size_t` | — | Must be exactly 32 |
 | `handle` | `void **` | — | Receives the new relay handle (out) |
 
-**Returns:** `0` on success, `-1` if sizes are wrong, `-6` if keys are invalid.
+**Returns:** `0` on success, `-1` if sizes are wrong, `-5` if key material is rejected.
 Free with `opaque_relay_destroy`.
 
 ---
@@ -238,6 +248,23 @@ void opaque_relay_destroy(void **handle_ptr);
 
 Destroys a relay handle, securely zeroizing the private key and OPRF state.
 Sets `*handle_ptr` to NULL.
+
+---
+
+### opaque_relay_try_destroy
+
+```c
+int32_t opaque_relay_try_destroy(void **handle_ptr);
+```
+
+Tries to destroy a relay handle and reports the outcome.
+
+**Returns:**
+- `0` on success (or already NULL).
+- `-1` if `handle_ptr` is NULL.
+- `-100` if the handle is currently busy.
+
+Use this in production cleanup paths where silent destroy failure is unacceptable.
 
 ---
 
@@ -261,6 +288,23 @@ void opaque_relay_state_destroy(void **handle_ptr);
 ```
 
 Destroys a state handle, securely zeroizing session keys and ephemeral material.
+
+---
+
+### opaque_relay_state_try_destroy
+
+```c
+int32_t opaque_relay_state_try_destroy(void **handle_ptr);
+```
+
+Tries to destroy a relay state handle and reports the outcome.
+
+**Returns:**
+- `0` on success (or already NULL).
+- `-1` if `handle_ptr` is NULL.
+- `-100` if the handle is currently busy.
+
+Use this in production cleanup paths where silent destroy failure is unacceptable.
 
 ---
 
@@ -359,20 +403,14 @@ This step:
 | `ke1_length` | `size_t` | — | Must be exactly 1273 |
 | `account_id` | `const uint8_t *` | >= 1 | Account identifier for OPRF key derivation |
 | `account_id_length` | `size_t` | — | Length of account_id |
-| `credentials_data` | `const uint8_t *` | 169 / NULL | Stored credentials, or NULL if not found |
-| `credentials_length` | `size_t` | — | 169 if credentials provided, 0 if NULL |
+| `credentials_data` | `const uint8_t *` | 169 | Stored credentials (required) |
+| `credentials_length` | `size_t` | — | Must be exactly 169 |
 | `ke2_data` | `uint8_t *` | >= 1377 | Output buffer for KE2 message |
 | `ke2_buffer_size` | `size_t` | — | Must be >= 1377 |
 | `state_handle` | `void *` | — | Fresh state from `opaque_relay_state_create` |
 
 **Returns:** `0` on success. Send the 1377-byte KE2 to the client.
-
-### Account Enumeration Resistance
-
-When `credentials_data` is NULL (or `credentials_length` is 0), the server
-generates **deterministic fake credentials** so the response is indistinguishable
-from a real one. This prevents attackers from discovering which accounts exist.
-The client will fail at MAC verification, receiving `-5` (same as wrong password).
+Returns `-101` when `credentials_data` is malformed or invalid.
 
 ---
 
@@ -440,9 +478,12 @@ extern int32_t opaque_relay_keypair_generate(void **handle);
 extern int32_t opaque_relay_keypair_get_public_key(void *handle, uint8_t *pk, size_t len);
 extern int32_t opaque_relay_create(void *kp, void **handle);
 extern void    opaque_relay_keypair_destroy(void **handle);
+extern int32_t opaque_relay_keypair_try_destroy(void **handle);
 extern int32_t opaque_relay_state_create(void **handle);
 extern void    opaque_relay_state_destroy(void **handle);
+extern int32_t opaque_relay_state_try_destroy(void **handle);
 extern void    opaque_relay_destroy(void **handle);
+extern int32_t opaque_relay_try_destroy(void **handle);
 extern int32_t opaque_relay_create_registration_response(
     const void *relay, const uint8_t *req, size_t req_len,
     const uint8_t *aid, size_t aid_len, uint8_t *resp, size_t resp_len);
@@ -469,7 +510,7 @@ func main() {
     // Setup
     var kpHandle unsafe.Pointer
     C.opaque_relay_keypair_generate(&kpHandle)
-    defer C.opaque_relay_keypair_destroy(&kpHandle)
+    defer C.opaque_relay_keypair_try_destroy(&kpHandle)
 
     publicKey := make([]byte, 32)
     C.opaque_relay_keypair_get_public_key(kpHandle,
@@ -477,7 +518,7 @@ func main() {
 
     var relayHandle unsafe.Pointer
     C.opaque_relay_create(kpHandle, &relayHandle)
-    defer C.opaque_relay_destroy(&relayHandle)
+    defer C.opaque_relay_try_destroy(&relayHandle)
 
     // --- Registration ---
     // request comes from client (33 bytes)
@@ -503,7 +544,7 @@ func main() {
     // ke1 comes from client (1273 bytes)
     var stateHandle unsafe.Pointer
     C.opaque_relay_state_create(&stateHandle)
-    defer C.opaque_relay_state_destroy(&stateHandle)
+    defer C.opaque_relay_state_try_destroy(&stateHandle)
 
     ke2 := make([]byte, C.opaque_relay_get_ke2_length())
     C.opaque_relay_generate_ke2(

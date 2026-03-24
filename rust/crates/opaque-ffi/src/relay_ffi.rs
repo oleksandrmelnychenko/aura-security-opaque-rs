@@ -46,8 +46,7 @@
 //! │                                                      │
 //! │ ◄─── receive ke1[1273] + account_id from client      │
 //! │                                                      │
-//! │ Load record[169] from database (or pass NULL if      │
-//! │ account not found — fake credentials are generated)  │
+//! │ Load record[169] from database (required)            │
 //! │                                                      │
 //! │ opaque_relay_state_create(&state_handle)              │
 //! │                                                      │
@@ -78,11 +77,10 @@
 //! └──────────────────────────────────────────────────────┘
 //! ```
 //!
-//! ## Account enumeration resistance
+//! ## Strict credential requirements
 //!
-//! When `credentials_data` is NULL in `opaque_relay_generate_ke2`, the server
-//! generates deterministic fake credentials so the response is indistinguishable
-//! from a real one. This prevents attackers from discovering which accounts exist.
+//! `opaque_relay_generate_ke2` requires a valid persisted credential record.
+//! Missing or malformed credentials are rejected.
 
 use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
@@ -99,14 +97,16 @@ use opaque_core::types::{
 };
 use opaque_relay::{
     build_credentials, create_registration_response, generate_ke2, responder_finish, Ke2Message,
-    OpaqueResponder, RegistrationResponse, ResponderCredentials, ResponderKeyPair, ResponderState,
+    OpaqueResponder, RegistrationResponse, ResponderCredentials, ResponderKeyPair, ResponderPhase,
+    ResponderState,
 };
 
-use crate::result_to_int;
+use crate::{ffi_error_to_int, result_to_int};
 
 const FFI_PANIC: i32 = -99;
 
 const FFI_BUSY: i32 = -100;
+const FFI_CORRUPTED_RECORD: i32 = -101;
 
 struct RelayHandle {
     responder: OpaqueResponder,
@@ -181,6 +181,12 @@ fn acquire_relay_state(
     Some((unsafe { &mut *ptr }, guard))
 }
 
+fn invalidate_relay_state(state_handle: &mut RelayStateHandle) {
+    state_handle.state.zeroize();
+    state_handle.state.phase = ResponderPhase::Finished;
+    state_handle.state.handshake_complete = false;
+}
+
 fn acquire_relay_keypair(
     handle: *mut std::ffi::c_void,
 ) -> Option<(&'static RelayKeypairHandle, BusyGuard<'static>)> {
@@ -228,11 +234,11 @@ pub unsafe extern "C" fn opaque_relay_keypair_generate(handle: *mut *mut std::ff
             return OpaqueError::InvalidInput.to_c_int();
         }
         let Ok(keypair) = ResponderKeyPair::generate() else {
-            return OpaqueError::CryptoError.to_c_int();
+            return ffi_error_to_int(OpaqueError::CryptoError);
         };
         let mut oprf_seed = [0u8; OPRF_SEED_LENGTH];
         if opaque_core::crypto::random_bytes(&mut oprf_seed).is_err() {
-            return OpaqueError::CryptoError.to_c_int();
+            return ffi_error_to_int(OpaqueError::CryptoError);
         }
         let boxed = Box::new(RelayKeypairHandle {
             keypair,
@@ -254,21 +260,36 @@ pub unsafe extern "C" fn opaque_relay_keypair_generate(handle: *mut *mut std::ff
 /// pointer is set to null, preventing double-free.
 #[no_mangle]
 pub unsafe extern "C" fn opaque_relay_keypair_destroy(handle_ptr: *mut *mut std::ffi::c_void) {
-    let _ = panic::catch_unwind(AssertUnwindSafe(|| {
+    let _ = opaque_relay_keypair_try_destroy(handle_ptr);
+}
+
+/// Tries to destroy a relay keypair handle and reports the outcome.
+///
+/// Returns:
+/// - `0` on success or if handle is already null.
+/// - `-1` if `handle_ptr` is null.
+/// - `-100` if the handle is currently in use by another call.
+#[no_mangle]
+pub unsafe extern "C" fn opaque_relay_keypair_try_destroy(
+    handle_ptr: *mut *mut std::ffi::c_void,
+) -> i32 {
+    panic::catch_unwind(AssertUnwindSafe(|| {
         if handle_ptr.is_null() {
-            return;
+            return OpaqueError::InvalidInput.to_c_int();
         }
         let handle = *handle_ptr;
         if handle.is_null() {
-            return;
+            return 0;
         }
         let in_use = &(*(handle as *const RelayKeypairHandle)).in_use;
         if in_use.swap(true, Ordering::Acquire) {
-            return;
+            return FFI_BUSY;
         }
         *handle_ptr = ptr::null_mut();
         drop(Box::from_raw(handle as *mut RelayKeypairHandle));
-    }));
+        0
+    }))
+    .unwrap_or(FFI_PANIC)
 }
 
 /// Copies the relay's 32-byte public key into the provided buffer.
@@ -403,21 +424,34 @@ pub unsafe extern "C" fn opaque_relay_create(
 /// After this call the inner pointer is set to null, preventing double-free.
 #[no_mangle]
 pub unsafe extern "C" fn opaque_relay_destroy(handle_ptr: *mut *mut std::ffi::c_void) {
-    let _ = panic::catch_unwind(AssertUnwindSafe(|| {
+    let _ = opaque_relay_try_destroy(handle_ptr);
+}
+
+/// Tries to destroy a relay handle and reports the outcome.
+///
+/// Returns:
+/// - `0` on success or if handle is already null.
+/// - `-1` if `handle_ptr` is null.
+/// - `-100` if the handle is currently in use by another call.
+#[no_mangle]
+pub unsafe extern "C" fn opaque_relay_try_destroy(handle_ptr: *mut *mut std::ffi::c_void) -> i32 {
+    panic::catch_unwind(AssertUnwindSafe(|| {
         if handle_ptr.is_null() {
-            return;
+            return OpaqueError::InvalidInput.to_c_int();
         }
         let handle = *handle_ptr;
         if handle.is_null() {
-            return;
+            return 0;
         }
         let in_use = &(*(handle as *const RelayHandle)).in_use;
         if in_use.swap(true, Ordering::Acquire) {
-            return;
+            return FFI_BUSY;
         }
         *handle_ptr = ptr::null_mut();
         drop(Box::from_raw(handle as *mut RelayHandle));
-    }));
+        0
+    }))
+    .unwrap_or(FFI_PANIC)
 }
 
 /// Allocates a fresh relay state for one authentication session.
@@ -464,21 +498,36 @@ pub unsafe extern "C" fn opaque_relay_state_create(handle: *mut *mut std::ffi::c
 /// pointer is set to null, preventing double-free.
 #[no_mangle]
 pub unsafe extern "C" fn opaque_relay_state_destroy(handle_ptr: *mut *mut std::ffi::c_void) {
-    let _ = panic::catch_unwind(AssertUnwindSafe(|| {
+    let _ = opaque_relay_state_try_destroy(handle_ptr);
+}
+
+/// Tries to destroy a relay state handle and reports the outcome.
+///
+/// Returns:
+/// - `0` on success or if handle is already null.
+/// - `-1` if `handle_ptr` is null.
+/// - `-100` if the handle is currently in use by another call.
+#[no_mangle]
+pub unsafe extern "C" fn opaque_relay_state_try_destroy(
+    handle_ptr: *mut *mut std::ffi::c_void,
+) -> i32 {
+    panic::catch_unwind(AssertUnwindSafe(|| {
         if handle_ptr.is_null() {
-            return;
+            return OpaqueError::InvalidInput.to_c_int();
         }
         let handle = *handle_ptr;
         if handle.is_null() {
-            return;
+            return 0;
         }
         let in_use = &(*(handle as *const RelayStateHandle)).in_use;
         if in_use.swap(true, Ordering::Acquire) {
-            return;
+            return FFI_BUSY;
         }
         *handle_ptr = ptr::null_mut();
         drop(Box::from_raw(handle as *mut RelayStateHandle));
-    }));
+        0
+    }))
+    .unwrap_or(FFI_PANIC)
 }
 
 /// **Registration step (server side).** Evaluates the client's blinded OPRF request
@@ -548,10 +597,10 @@ pub unsafe extern "C" fn opaque_relay_create_registration_response(
                     out,
                 ) {
                     Ok(()) => 0,
-                    Err(e) => e.to_c_int(),
+                    Err(e) => ffi_error_to_int(e),
                 }
             }
-            Err(e) => e.to_c_int(),
+            Err(e) => ffi_error_to_int(e),
         }
     }))
     .unwrap_or(FFI_PANIC)
@@ -603,7 +652,7 @@ pub unsafe extern "C" fn opaque_relay_build_credentials(
 
         match build_credentials(record, &mut creds) {
             Ok(()) => {}
-            Err(e) => return e.to_c_int(),
+            Err(e) => return ffi_error_to_int(e),
         }
         let out = std::slice::from_raw_parts_mut(credentials_out, credentials_out_length);
         result_to_int(protocol::write_registration_record(
@@ -625,13 +674,6 @@ pub unsafe extern "C" fn opaque_relay_build_credentials(
 /// 5. Combines classical and post-quantum key material (AND-model)
 /// 6. Computes the server's MAC for mutual authentication
 ///
-/// ## Account enumeration resistance
-///
-/// If `credentials_data` is NULL (or length is 0), the server generates **fake credentials**
-/// that are indistinguishable from real ones. This ensures the server always responds with
-/// a valid-looking KE2 regardless of whether the account exists. The client will fail at
-/// the MAC verification step, receiving the same `-5` error as a wrong password.
-///
 /// # Parameters
 ///
 /// | Name                | Type          | Size   | Description                              |
@@ -641,8 +683,8 @@ pub unsafe extern "C" fn opaque_relay_build_credentials(
 /// | `ke1_length`        | `usize`       | —      | Must be exactly 1273                     |
 /// | `account_id`        | `*const u8`   | ≥ 1    | Account identifier for OPRF key derivation|
 /// | `account_id_length` | `usize`       | —      | Length of account_id in bytes            |
-/// | `credentials_data`  | `*const u8`   | 169/NULL| Stored credentials, or NULL if not found|
-/// | `credentials_length`| `usize`       | —      | 169 if credentials provided, 0 if NULL   |
+/// | `credentials_data`  | `*const u8`   | 169     | Stored credentials (required)            |
+/// | `credentials_length`| `usize`       | —      | Must be exactly 169                      |
 /// | `ke2_data`          | `*mut u8`     | ≥ 1377 | Output buffer for KE2 message            |
 /// | `ke2_buffer_size`   | `usize`       | —      | Size of output buffer (must be ≥ 1377)   |
 /// | `state_handle`      | `*mut void`   | —      | Fresh state from `opaque_relay_state_create`|
@@ -650,14 +692,15 @@ pub unsafe extern "C" fn opaque_relay_build_credentials(
 /// # Returns
 ///
 /// `0` on success. The 1377-byte KE2 is written to `ke2_data`.
+/// Returns `-101` when `credentials_data` cannot be parsed as a valid
+/// registration record.
 ///
 /// # Safety
 ///
 /// - `relay_handle` must be a valid pointer to a `RelayHandle` from `opaque_relay_create`.
 /// - `ke1_data` must point to at least `KE1_LENGTH` readable bytes.
 /// - `account_id` must point to at least `account_id_length` readable bytes (non-zero).
-/// - `credentials_data` may be null (triggers fake credentials); if non-null, must point to at
-///   least `RESPONDER_CREDENTIALS_LENGTH` readable bytes.
+/// - `credentials_data` must point to at least `RESPONDER_CREDENTIALS_LENGTH` readable bytes.
 /// - `ke2_data` must point to a writable buffer of at least `KE2_LENGTH` bytes.
 /// - `state_handle` must be a valid pointer to a `RelayStateHandle` from
 ///   `opaque_relay_state_create`.
@@ -675,15 +718,12 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
     state_handle: *mut std::ffi::c_void,
 ) -> i32 {
     panic::catch_unwind(AssertUnwindSafe(|| {
-        let credentials_inconsistent = (credentials_data.is_null() && credentials_length != 0)
-            || (!credentials_data.is_null()
-                && credentials_length > 0
-                && credentials_length != RESPONDER_CREDENTIALS_LENGTH);
         if ke1_data.is_null()
             || ke1_length != KE1_LENGTH
             || account_id.is_null()
             || account_id_length == 0
-            || credentials_inconsistent
+            || credentials_data.is_null()
+            || credentials_length != RESPONDER_CREDENTIALS_LENGTH
             || ke2_data.is_null()
             || ke2_buffer_size < KE2_LENGTH
         {
@@ -701,35 +741,39 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
         let aid = std::slice::from_raw_parts(account_id, account_id_length);
 
         let mut creds = ResponderCredentials::new();
-        if credentials_length >= RESPONDER_CREDENTIALS_LENGTH && !credentials_data.is_null() {
-            let cred_data = std::slice::from_raw_parts(credentials_data, credentials_length);
-            if let Ok(record_view) = protocol::parse_registration_record(cred_data) {
-                if opaque_core::crypto::validate_public_key(record_view.initiator_public_key)
-                    .is_ok()
-                    && record_view.envelope.len() == opaque_core::types::ENVELOPE_LENGTH
-                {
-                    creds.envelope = record_view.envelope.to_vec();
-                    creds
-                        .initiator_public_key
-                        .copy_from_slice(record_view.initiator_public_key);
-                    creds.registered = true;
-                }
-            }
+        let cred_data = std::slice::from_raw_parts(credentials_data, credentials_length);
+        let record_view = match protocol::parse_registration_record(cred_data) {
+            Ok(view) => view,
+            Err(_) => return FFI_CORRUPTED_RECORD,
+        };
+        if opaque_core::crypto::validate_public_key(record_view.initiator_public_key).is_err()
+            || record_view.envelope.len() != opaque_core::types::ENVELOPE_LENGTH
+        {
+            return FFI_CORRUPTED_RECORD;
         }
+        creds.envelope = record_view.envelope.to_vec();
+        creds
+            .initiator_public_key
+            .copy_from_slice(record_view.initiator_public_key);
+        creds.registered = true;
 
         let mut ke2 = Ke2Message::new();
 
         let result = match generate_ke2(&rh.responder, ke1, aid, &creds, &mut ke2, &mut sh.state) {
             Ok(()) => {
                 let out = std::slice::from_raw_parts_mut(ke2_data, ke2_buffer_size);
-                protocol::write_ke2(
+                let write_result = protocol::write_ke2(
                     &ke2.responder_nonce,
                     &ke2.responder_public_key,
                     &ke2.credential_response,
                     &ke2.responder_mac,
                     &ke2.kem_ciphertext,
                     out,
-                )
+                );
+                if write_result.is_err() {
+                    invalidate_relay_state(sh);
+                }
+                write_result
             }
             Err(e) => Err(e),
         };
@@ -808,7 +852,7 @@ pub unsafe extern "C" fn opaque_relay_finish(
                 ptr::copy_nonoverlapping(mk.as_ptr(), master_key_out, MASTER_KEY_LENGTH);
                 0
             }
-            Err(e) => e.to_c_int(),
+            Err(e) => ffi_error_to_int(e),
         };
         sk.zeroize();
         mk.zeroize();
@@ -838,7 +882,7 @@ pub unsafe extern "C" fn opaque_relay_finish(
 ///
 /// # Returns
 ///
-/// `0` on success. Returns `-1` if sizes are wrong, `-6` if keys are invalid.
+/// `0` on success. Returns `-1` if input sizes are wrong, `-5` if key material is rejected.
 /// The caller must free the handle with [`opaque_relay_destroy`].
 ///
 /// # Safety

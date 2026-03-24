@@ -53,6 +53,8 @@ pub struct InitiatorState {
 
     pub initiator_nonce: [u8; NONCE_LENGTH],
 
+    pub account_context_hash: [u8; HASH_LENGTH],
+
     pub master_key: [u8; MASTER_KEY_LENGTH],
 
     pub pq_ephemeral_public_key: [u8; pq::KEM_PUBLIC_KEY_LENGTH],
@@ -83,6 +85,7 @@ impl InitiatorState {
             session_key: [0u8; HASH_LENGTH],
             oblivious_prf_blind_scalar: [0u8; PRIVATE_KEY_LENGTH],
             initiator_nonce: [0u8; NONCE_LENGTH],
+            account_context_hash: [0u8; HASH_LENGTH],
             master_key: [0u8; MASTER_KEY_LENGTH],
             pq_ephemeral_public_key: [0u8; pq::KEM_PUBLIC_KEY_LENGTH],
             pq_ephemeral_secret_key: [0u8; pq::KEM_SECRET_KEY_LENGTH],

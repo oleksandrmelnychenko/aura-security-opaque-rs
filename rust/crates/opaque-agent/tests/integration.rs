@@ -57,7 +57,7 @@ fn authenticate(
 
     let mut client_state = InitiatorState::new();
     let mut ke1 = Ke1Message::new();
-    generate_ke1(password, &mut ke1, &mut client_state).unwrap();
+    generate_ke1(password, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
     let mut ke1_bytes = vec![0u8; KE1_LENGTH];
     protocol::write_ke1(
@@ -161,7 +161,7 @@ fn wrong_password_fails_authentication() {
 
     let mut client_state = InitiatorState::new();
     let mut ke1 = Ke1Message::new();
-    generate_ke1(wrong_password, &mut ke1, &mut client_state).unwrap();
+    generate_ke1(wrong_password, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
     let mut ke1_bytes = vec![0u8; KE1_LENGTH];
     protocol::write_ke1(
@@ -254,7 +254,7 @@ fn tampered_ke2_fails_authentication() {
 
     let mut client_state = InitiatorState::new();
     let mut ke1 = Ke1Message::new();
-    generate_ke1(password, &mut ke1, &mut client_state).unwrap();
+    generate_ke1(password, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
     let mut ke1_bytes = vec![0u8; KE1_LENGTH];
     protocol::write_ke1(
@@ -318,7 +318,7 @@ fn responder_finish_rejects_replay_after_failed_ke3() {
 
     let mut client_state = InitiatorState::new();
     let mut ke1 = Ke1Message::new();
-    generate_ke1(password, &mut ke1, &mut client_state).unwrap();
+    generate_ke1(password, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
     let mut ke1_bytes = vec![0u8; KE1_LENGTH];
     protocol::write_ke1(

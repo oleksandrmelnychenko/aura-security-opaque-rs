@@ -14,10 +14,14 @@ use crate::state::{InitiatorPhase, InitiatorState, Ke1Message, Ke3Message, Opaqu
 
 pub fn generate_ke1(
     secure_key: &[u8],
+    account_id: &[u8],
     ke1: &mut Ke1Message,
     state: &mut InitiatorState,
 ) -> OpaqueResult<()> {
     if secure_key.is_empty() || secure_key.len() > MAX_SECURE_KEY_LENGTH {
+        return Err(OpaqueError::InvalidInput);
+    }
+    if account_id.is_empty() {
         return Err(OpaqueError::InvalidInput);
     }
     if state.phase != InitiatorPhase::Created {
@@ -27,10 +31,14 @@ pub fn generate_ke1(
         state.phase = InitiatorPhase::Finished;
         return Err(OpaqueError::ValidationError);
     }
-
     state.secure_key.zeroize();
     state.secure_key[..secure_key.len()].copy_from_slice(secure_key);
     state.secure_key_len = secure_key.len();
+    state.account_context_hash = [0u8; HASH_LENGTH];
+    crypto::sha512_multi(
+        &[labels::ACCOUNT_CONTEXT_BINDING, account_id],
+        &mut state.account_context_hash,
+    );
 
     state.initiator_ephemeral_private_key = crypto::random_nonzero_scalar()?;
     state.initiator_ephemeral_public_key =
@@ -74,6 +82,9 @@ pub fn generate_ke3(
     }
     if state.is_expired() {
         state.phase = InitiatorPhase::Finished;
+        return Err(OpaqueError::ValidationError);
+    }
+    if opaque_core::types::is_all_zero(&state.account_context_hash) {
         return Err(OpaqueError::ValidationError);
     }
 
@@ -143,6 +154,7 @@ pub fn generate_ke3(
         state.initiator_private_key.zeroize();
         state.secure_key.zeroize();
         state.secure_key_len = 0;
+        state.account_context_hash.zeroize();
         state.oblivious_prf_blind_scalar.zeroize();
         state.session_key.zeroize();
         state.master_key.zeroize();
@@ -189,7 +201,8 @@ pub fn generate_ke3(
         + DH_COMPONENT_COUNT * PUBLIC_KEY_LENGTH
         + CREDENTIAL_RESPONSE_LENGTH
         + pq::KEM_CIPHERTEXT_LENGTH
-        + pq::KEM_PUBLIC_KEY_LENGTH;
+        + pq::KEM_PUBLIC_KEY_LENGTH
+        + HASH_LENGTH;
     let mut mac_input = vec![0u8; mac_input_size];
     let mut off = 0;
 
@@ -206,6 +219,7 @@ pub fn generate_ke3(
     append(credential_response);
     append(&state.pq_ephemeral_public_key);
     append(kem_ciphertext);
+    append(&state.account_context_hash);
 
     let mut transcript_hash = [0u8; HASH_LENGTH];
     crypto::sha512_multi(
@@ -253,6 +267,7 @@ pub fn generate_ke3(
         state.initiator_private_key.zeroize();
         state.secure_key.zeroize();
         state.secure_key_len = 0;
+        state.account_context_hash.zeroize();
         state.oblivious_prf_blind_scalar.zeroize();
         state.session_key.zeroize();
         state.master_key.zeroize();
@@ -311,6 +326,7 @@ pub fn initiator_finish(
     state.pq_ephemeral_secret_key.zeroize();
     state.secure_key.zeroize();
     state.secure_key_len = 0;
+    state.account_context_hash.zeroize();
     state.oblivious_prf_blind_scalar.zeroize();
     state.initiator_private_key.zeroize();
     state.initiator_ephemeral_private_key.zeroize();

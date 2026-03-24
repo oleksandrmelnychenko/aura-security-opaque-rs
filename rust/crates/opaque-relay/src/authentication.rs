@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 use opaque_core::types::{
-    constant_time_eq, ct_select_bytes, labels, pq, pq_labels, OpaqueError, OpaqueResult,
-    CLASSICAL_IKM_LENGTH, CREDENTIAL_RESPONSE_LENGTH, DH_COMPONENT_COUNT, ENVELOPE_LENGTH,
-    HASH_LENGTH, KE1_LENGTH, KE3_LENGTH, MAC_LENGTH, MASTER_KEY_LENGTH, NONCE_LENGTH,
-    PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH,
+    constant_time_eq, labels, pq, pq_labels, OpaqueError, OpaqueResult, CLASSICAL_IKM_LENGTH,
+    CREDENTIAL_RESPONSE_LENGTH, DH_COMPONENT_COUNT, ENVELOPE_LENGTH, HASH_LENGTH, KE1_LENGTH,
+    KE3_LENGTH, MAC_LENGTH, MASTER_KEY_LENGTH, NONCE_LENGTH, PUBLIC_KEY_LENGTH,
 };
 use opaque_core::{crypto, pq_kem, protocol};
 use zeroize::Zeroize;
@@ -13,30 +12,6 @@ use zeroize::Zeroize;
 use crate::state::{
     Ke2Message, OpaqueResponder, ResponderCredentials, ResponderPhase, ResponderState,
 };
-
-use opaque_core::types::labels::FAKE_CREDENTIALS_CONTEXT;
-
-fn derive_fake_credentials(
-    responder: &OpaqueResponder,
-    account_id: &[u8],
-) -> OpaqueResult<([u8; PUBLIC_KEY_LENGTH], [u8; ENVELOPE_LENGTH])> {
-    let mut seed = responder.evaluator().derive_fake_material(account_id)?;
-
-    let mut fake_isk = [0u8; PRIVATE_KEY_LENGTH];
-    crypto::hash_to_scalar(&seed, &mut fake_isk)?;
-    let fake_ipk = crypto::scalarmult_base(&fake_isk)?;
-    fake_isk.zeroize();
-
-    let mut prk = [0u8; HASH_LENGTH];
-    crypto::key_derivation_extract(labels::HKDF_SALT, &seed, &mut prk)?;
-
-    let mut fake_envelope = [0u8; ENVELOPE_LENGTH];
-    crypto::key_derivation_expand(&prk, FAKE_CREDENTIALS_CONTEXT, &mut fake_envelope)?;
-
-    seed.zeroize();
-    prk.zeroize();
-    Ok((fake_ipk, fake_envelope))
-}
 
 pub fn generate_ke2(
     responder: &OpaqueResponder,
@@ -59,6 +34,9 @@ pub fn generate_ke2(
     if account_id.is_empty() {
         return Err(OpaqueError::InvalidInput);
     }
+    if !credentials.registered || credentials.envelope.len() != ENVELOPE_LENGTH {
+        return Err(OpaqueError::ValidationError);
+    }
 
     let ke1 = protocol::parse_ke1(ke1_data)?;
     let kp = responder.keypair();
@@ -67,28 +45,17 @@ pub fn generate_ke2(
         .initiator_public_key
         .try_into()
         .map_err(|_| OpaqueError::InvalidProtocolMessage)?;
-    let (ipk, env) = derive_fake_credentials(responder, account_id)?;
-    let mut fake_init_static_pk = ipk;
-    let mut fake_envelope = env;
-
-    let envelope_len_ok =
-        subtle::Choice::from((credentials.envelope.len() == ENVELOPE_LENGTH) as u8);
-    let use_real = subtle::Choice::from(credentials.registered as u8) & envelope_len_ok;
-
-    let mut selected_pk = [0u8; PUBLIC_KEY_LENGTH];
-    ct_select_bytes(
-        &mut selected_pk,
-        &credentials.initiator_public_key,
-        &fake_init_static_pk,
-        use_real,
-    );
-
-    let mut selected_envelope = [0u8; ENVELOPE_LENGTH];
-    let real_env = credentials
+    let selected_pk = credentials.initiator_public_key;
+    let selected_envelope: &[u8; ENVELOPE_LENGTH] = credentials
         .envelope
-        .get(..ENVELOPE_LENGTH)
-        .unwrap_or(&fake_envelope);
-    ct_select_bytes(&mut selected_envelope, real_env, &fake_envelope, use_real);
+        .as_slice()
+        .try_into()
+        .map_err(|_| OpaqueError::ValidationError)?;
+    let mut account_context_hash = [0u8; HASH_LENGTH];
+    crypto::sha512_multi(
+        &[labels::ACCOUNT_CONTEXT_BINDING, account_id],
+        &mut account_context_hash,
+    );
 
     crypto::validate_ristretto_point(ke1.credential_request)?;
     crypto::validate_public_key(init_eph_pk)?;
@@ -113,7 +80,7 @@ pub fn generate_ke2(
     let evaluated_elem = responder.evaluator().evaluate_oprf(cred_req, account_id)?;
 
     ke2.credential_response[..PUBLIC_KEY_LENGTH].copy_from_slice(&evaluated_elem);
-    ke2.credential_response[PUBLIC_KEY_LENGTH..].copy_from_slice(&selected_envelope);
+    ke2.credential_response[PUBLIC_KEY_LENGTH..].copy_from_slice(selected_envelope);
 
     let mut dh1 = [0u8; PUBLIC_KEY_LENGTH];
     let mut dh2 = [0u8; PUBLIC_KEY_LENGTH];
@@ -152,7 +119,8 @@ pub fn generate_ke2(
         + DH_COMPONENT_COUNT * PUBLIC_KEY_LENGTH
         + CREDENTIAL_RESPONSE_LENGTH
         + pq::KEM_CIPHERTEXT_LENGTH
-        + pq::KEM_PUBLIC_KEY_LENGTH;
+        + pq::KEM_PUBLIC_KEY_LENGTH
+        + HASH_LENGTH;
     let mut mac_input = vec![0u8; mac_input_size];
     let mut off = 0;
 
@@ -169,6 +137,7 @@ pub fn generate_ke2(
     append(&ke2.credential_response);
     append(ke1.pq_ephemeral_public_key);
     append(&ke2.kem_ciphertext);
+    append(&account_context_hash);
 
     let mut transcript_hash = [0u8; HASH_LENGTH];
     crypto::sha512_multi(
@@ -204,11 +173,7 @@ pub fn generate_ke2(
     resp_mac_key.zeroize();
     init_mac_key.zeroize();
     transcript_hash.zeroize();
-    fake_envelope.zeroize();
-    fake_init_static_pk.zeroize();
-    selected_pk.zeroize();
-    selected_envelope.zeroize();
-
+    account_context_hash.zeroize();
     state.phase = ResponderPhase::Ke2Generated;
     Ok(())
 }

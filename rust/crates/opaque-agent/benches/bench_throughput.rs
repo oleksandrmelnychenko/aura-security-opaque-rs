@@ -52,7 +52,7 @@ fn setup() -> (OpaqueResponder, Vec<u8>, ResponderCredentials) {
 fn make_ke1_bytes() -> (InitiatorState, Vec<u8>) {
     let mut state = InitiatorState::new();
     let mut ke1 = Ke1Message::new();
-    generate_ke1(PASSWORD, &mut ke1, &mut state).unwrap();
+    generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1, &mut state).unwrap();
 
     let mut ke1_bytes = vec![0u8; KE1_LENGTH];
     protocol::write_ke1(

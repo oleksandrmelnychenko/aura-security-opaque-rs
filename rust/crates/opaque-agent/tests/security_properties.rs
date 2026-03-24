@@ -57,7 +57,7 @@ fn authenticate(
     let initiator = OpaqueInitiator::new(responder.public_key()).unwrap();
     let mut client_state = InitiatorState::new();
     let mut ke1 = Ke1Message::new();
-    generate_ke1(password, &mut ke1, &mut client_state).unwrap();
+    generate_ke1(password, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
     let mut ke1_bytes = vec![0u8; KE1_LENGTH];
     protocol::write_ke1(
@@ -144,7 +144,7 @@ fn intercepted_authenticate(
     let initiator = OpaqueInitiator::new(responder.public_key()).unwrap();
     let mut client_state = InitiatorState::new();
     let mut ke1 = Ke1Message::new();
-    generate_ke1(password, &mut ke1, &mut client_state).unwrap();
+    generate_ke1(password, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
     let client_ephemeral_sk = client_state.initiator_ephemeral_private_key;
     let client_ephemeral_pk = client_state.initiator_ephemeral_public_key;
@@ -246,11 +246,17 @@ fn adversary_derive_session_key(
     kem_ss: &[u8],
     session: &InterceptedSession,
 ) -> [u8; HASH_LENGTH] {
+    let mut account_context_hash = [0u8; HASH_LENGTH];
+    crypto::sha512_multi(
+        &[labels::ACCOUNT_CONTEXT_BINDING, ACCOUNT_ID],
+        &mut account_context_hash,
+    );
     let mac_input_size = 2 * NONCE_LENGTH
         + 4 * PUBLIC_KEY_LENGTH
         + CREDENTIAL_RESPONSE_LENGTH
         + pq::KEM_CIPHERTEXT_LENGTH
-        + pq::KEM_PUBLIC_KEY_LENGTH;
+        + pq::KEM_PUBLIC_KEY_LENGTH
+        + HASH_LENGTH;
     let mut mac_input = vec![0u8; mac_input_size];
     let mut off = 0;
     let mut append = |data: &[u8]| {
@@ -266,6 +272,7 @@ fn adversary_derive_session_key(
     append(&session.credential_response);
     append(&session.client_kem_pk);
     append(&session.kem_ciphertext);
+    append(&account_context_hash);
 
     let mut transcript_hash = [0u8; HASH_LENGTH];
     crypto::sha512_multi(
@@ -397,7 +404,7 @@ mod p2_password_secrecy {
         let _initiator = OpaqueInitiator::new(responder.public_key()).unwrap();
         let mut state = InitiatorState::new();
         let mut ke1 = Ke1Message::new();
-        generate_ke1(PASSWORD, &mut ke1, &mut state).unwrap();
+        generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1, &mut state).unwrap();
 
         let mut ke1_bytes = vec![0u8; KE1_LENGTH];
         protocol::write_ke1(
@@ -695,7 +702,7 @@ mod p5_mutual_authentication {
         let initiator = OpaqueInitiator::new(server_a.public_key()).unwrap();
         let mut client_state = InitiatorState::new();
         let mut ke1 = Ke1Message::new();
-        generate_ke1(PASSWORD, &mut ke1, &mut client_state).unwrap();
+        generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
         let mut ke1_bytes = vec![0u8; KE1_LENGTH];
         protocol::write_ke1(
@@ -745,7 +752,7 @@ mod p5_mutual_authentication {
 
         let mut client_state = InitiatorState::new();
         let mut ke1 = Ke1Message::new();
-        generate_ke1(PASSWORD, &mut ke1, &mut client_state).unwrap();
+        generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
         let mut ke1_bytes = vec![0u8; KE1_LENGTH];
         protocol::write_ke1(
@@ -799,7 +806,7 @@ mod p5_mutual_authentication {
 
         let mut client_state = InitiatorState::new();
         let mut ke1 = Ke1Message::new();
-        generate_ke1(PASSWORD, &mut ke1, &mut client_state).unwrap();
+        generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
         let mut ke1_bytes = vec![0u8; KE1_LENGTH];
         protocol::write_ke1(
@@ -852,7 +859,7 @@ mod p5_mutual_authentication {
 
         let mut client_state = InitiatorState::new();
         let mut ke1 = Ke1Message::new();
-        generate_ke1(PASSWORD, &mut ke1, &mut client_state).unwrap();
+        generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
         let mut ke1_bytes = vec![0u8; KE1_LENGTH];
         protocol::write_ke1(
@@ -906,7 +913,7 @@ mod p5_mutual_authentication {
 
         let mut client_state = InitiatorState::new();
         let mut ke1 = Ke1Message::new();
-        generate_ke1(PASSWORD, &mut ke1, &mut client_state).unwrap();
+        generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
         let mut ke1_bytes = vec![0u8; KE1_LENGTH];
         protocol::write_ke1(
@@ -951,7 +958,7 @@ mod p5_mutual_authentication {
 
         let mut client_state = InitiatorState::new();
         let mut ke1 = Ke1Message::new();
-        generate_ke1(PASSWORD, &mut ke1, &mut client_state).unwrap();
+        generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
         let mut ke1_bytes = vec![0u8; KE1_LENGTH];
         protocol::write_ke1(
@@ -1011,7 +1018,7 @@ mod p5_mutual_authentication {
         let initiator = OpaqueInitiator::new(responder.public_key()).unwrap();
         let mut cs1 = InitiatorState::new();
         let mut ke1_1 = Ke1Message::new();
-        generate_ke1(PASSWORD, &mut ke1_1, &mut cs1).unwrap();
+        generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1_1, &mut cs1).unwrap();
 
         let mut ke1_bytes_1 = vec![0u8; KE1_LENGTH];
         protocol::write_ke1(
@@ -1051,7 +1058,7 @@ mod p5_mutual_authentication {
 
         let mut cs2 = InitiatorState::new();
         let mut ke1_2 = Ke1Message::new();
-        generate_ke1(PASSWORD, &mut ke1_2, &mut cs2).unwrap();
+        generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1_2, &mut cs2).unwrap();
 
         let mut ke3 = Ke3Message::new();
         let result = generate_ke3(&initiator, &ke2_bytes_1, &mut cs2, &mut ke3);
@@ -1269,7 +1276,7 @@ mod p7_offline_dictionary_resistance {
         for wrong_pwd in &dictionary {
             let mut cs = InitiatorState::new();
             let mut ke1 = Ke1Message::new();
-            generate_ke1(wrong_pwd, &mut ke1, &mut cs).unwrap();
+            generate_ke1(wrong_pwd, ACCOUNT_ID, &mut ke1, &mut cs).unwrap();
 
             let mut ke1_bytes = vec![0u8; KE1_LENGTH];
             protocol::write_ke1(

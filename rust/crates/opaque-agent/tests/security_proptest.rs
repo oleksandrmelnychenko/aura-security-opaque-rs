@@ -57,7 +57,7 @@ fn authenticate(password: &[u8], responder: &OpaqueResponder, record_bytes: &[u8
 
     let mut client_state = InitiatorState::new();
     let mut ke1 = Ke1Message::new();
-    generate_ke1(password, &mut ke1, &mut client_state)?;
+    generate_ke1(password, ACCOUNT_ID, &mut ke1, &mut client_state)?;
 
     let mut ke1_bytes = vec![0u8; KE1_LENGTH];
     protocol::write_ke1(
@@ -133,7 +133,7 @@ fn try_generate_ke3(
 
     let mut client_state = InitiatorState::new();
     let mut ke1 = Ke1Message::new();
-    generate_ke1(password, &mut ke1, &mut client_state)?;
+    generate_ke1(password, ACCOUNT_ID, &mut ke1, &mut client_state)?;
 
     let mut ke1_bytes = vec![0u8; KE1_LENGTH];
     protocol::write_ke1(
@@ -185,7 +185,7 @@ fn try_responder_finish(
 
     let mut client_state = InitiatorState::new();
     let mut ke1 = Ke1Message::new();
-    generate_ke1(password, &mut ke1, &mut client_state)?;
+    generate_ke1(password, ACCOUNT_ID, &mut ke1, &mut client_state)?;
 
     let mut ke1_bytes = vec![0u8; KE1_LENGTH];
     protocol::write_ke1(

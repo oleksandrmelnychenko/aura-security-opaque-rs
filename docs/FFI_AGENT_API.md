@@ -25,15 +25,8 @@ Use from Swift, Kotlin, C, Go, or any language with C FFI support.
 |-----:|---------|
 | `0` | Success |
 | `-1` | Invalid input parameter |
-| `-2` | Cryptographic operation failed |
-| `-3` | Protocol message has invalid format/length |
-| `-4` | Validation failed (state expired or wrong phase) |
-| `-5` | Authentication failed (wrong password or tampered MAC) |
-| `-6` | Invalid public key |
+| `-5` | Authentication/protocol validation failed |
 | `-7` | Account already registered |
-| `-8` | Malformed ML-KEM key or ciphertext |
-| `-9` | Envelope has invalid format |
-| `-10` | Unsupported protocol version |
 | `-99` | Internal panic (should never happen) |
 | `-100` | Handle is busy (concurrent call rejected) |
 
@@ -71,6 +64,7 @@ concurrently from different threads.
 │                                                      │
 │ opaque_agent_generate_ke1(                           │
 │     handle, password, password_len,                  │
+│     account_id, account_id_len,                      │
 │     state, &ke1[1273], 1273)                         │
 │                                                      │
 │         ──── send ke1[1273] to server ────►          │
@@ -125,7 +119,7 @@ Creates a new agent handle bound to a specific relay's public key.
 | `key_length` | `size_t` | — | Must be exactly 32 |
 | `handle` | `void **` | — | Receives the new agent handle (out) |
 
-**Returns:** `0` on success, `-1` if inputs are invalid, `-6` if the key is not a valid Ristretto255 point.
+**Returns:** `0` on success, `-1` if inputs are invalid, `-5` if key material is rejected.
 
 **Ownership:** Caller owns the handle. Free with `opaque_agent_destroy`.
 
@@ -142,6 +136,23 @@ Sets `*handle_ptr` to NULL. Calling on an already-null pointer is a no-op.
 
 ---
 
+### opaque_agent_try_destroy
+
+```c
+int32_t opaque_agent_try_destroy(void **handle_ptr);
+```
+
+Tries to destroy an agent handle and reports the outcome.
+
+**Returns:**
+- `0` on success (or already NULL).
+- `-1` if `handle_ptr` is NULL.
+- `-100` if the handle is currently busy.
+
+Use this in production cleanup paths where silent destroy failure is unacceptable.
+
+---
+
 ### opaque_agent_state_create
 
 ```c
@@ -149,8 +160,7 @@ int32_t opaque_agent_state_create(void **handle);
 ```
 
 Allocates a fresh state for one registration or authentication session.
-Each protocol flow requires its own state. **The state expires after 5 minutes** —
-subsequent calls return `-4`.
+Each protocol flow requires its own state. **The state expires after 5 minutes**.
 
 **Returns:** `0` on success. Free with `opaque_agent_state_destroy`.
 
@@ -163,6 +173,23 @@ void opaque_agent_state_destroy(void **handle_ptr);
 ```
 
 Destroys a state handle, securely zeroizing password, keys, nonces, and shared secrets.
+
+---
+
+### opaque_agent_state_try_destroy
+
+```c
+int32_t opaque_agent_state_try_destroy(void **handle_ptr);
+```
+
+Tries to destroy a state handle and reports the outcome.
+
+**Returns:**
+- `0` on success (or already NULL).
+- `-1` if `handle_ptr` is NULL.
+- `-100` if the handle is currently busy.
+
+Use this in production cleanup paths where silent destroy failure is unacceptable.
 
 ---
 
@@ -232,6 +259,8 @@ int32_t opaque_agent_generate_ke1(
     void          *agent_handle,
     const uint8_t *secure_key,
     size_t         secure_key_length,
+    const uint8_t *account_id,
+    size_t         account_id_length,
     void          *state_handle,
     uint8_t       *ke1_out,
     size_t         ke1_length
@@ -252,11 +281,15 @@ The 1273-byte KE1 contains:
 | `agent_handle` | `void *` | — | Agent handle |
 | `secure_key` | `const uint8_t *` | 1–4096 | User's password (raw bytes) |
 | `secure_key_length` | `size_t` | — | Length of password |
+| `account_id` | `const uint8_t *` | >= 1 | Account identifier bound into transcript |
+| `account_id_length` | `size_t` | — | Length of account identifier |
 | `state_handle` | `void *` | — | Fresh state from `opaque_agent_state_create` |
 | `ke1_out` | `uint8_t *` | >= 1273 | Output buffer for KE1 |
 | `ke1_length` | `size_t` | — | Size of output buffer (must be >= 1273) |
 
-**Returns:** `0` on success. Send the 1273-byte KE1 to the server along with the account identifier.
+**Returns:** `0` on success. Send the 1273-byte KE1 to the server along with the same `account_id`.
+The server must use the exact same `account_id` in `opaque_relay_generate_ke2`, because this value
+is cryptographically bound into the handshake transcript.
 
 ---
 
@@ -384,6 +417,7 @@ opaque_agent_state_create(&stateHandle)
 var ke1 = [UInt8](repeating: 0, count: Int(opaque_get_ke1_length()))
 opaque_agent_generate_ke1(
     agentHandle, password, password.count,
+    accountID, accountID.count,
     stateHandle, &ke1, ke1.count)
 
 // ... send ke1 to server, receive ke2 (1377 bytes) ...
@@ -402,6 +436,7 @@ opaque_agent_finish(
     &sessionKey, 64, &masterKey, 32)
 
 // Cleanup
-opaque_agent_state_destroy(&stateHandle)
-opaque_agent_destroy(&agentHandle)
+let stateDestroyRc = opaque_agent_state_try_destroy(&stateHandle)
+let agentDestroyRc = opaque_agent_try_destroy(&agentHandle)
+// Optionally handle `-100` by retrying cleanup from a safe point.
 ```

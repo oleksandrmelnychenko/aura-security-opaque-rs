@@ -70,6 +70,10 @@ pub fn finalize_registration(
 
     crypto::validate_public_key(responder_public_key)?;
     if !constant_time_eq(responder_public_key, expected_rpk) {
+        state.secure_key.zeroize();
+        state.secure_key_len = 0;
+        state.oblivious_prf_blind_scalar.zeroize();
+        state.phase = InitiatorPhase::Finished;
         return Err(OpaqueError::AuthenticationError);
     }
 

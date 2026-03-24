@@ -42,7 +42,7 @@
 | **Likelihood** | 3 |
 | **Impact** | 5 |
 | **Risk Score** | 15 (High) |
-| **Mitigation** | All secret-dependent operations use `subtle` crate for constant-time comparisons. Credential lookup uses `ct_select_bytes` with fake credentials. Scalar validation rejects non-canonical encodings in constant time. |
+| **Mitigation** | All secret-dependent operations use `subtle` crate for constant-time comparisons. Credential records are strictly validated and rejected on parse/format errors. Scalar validation rejects non-canonical encodings in constant time. |
 | **Residual Risk** | Low |
 | **Owner** | Maintainer |
 

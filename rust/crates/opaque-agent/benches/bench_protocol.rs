@@ -124,7 +124,7 @@ fn bench_auth_ke1(c: &mut Criterion) {
         b.iter(|| {
             let mut state = InitiatorState::new();
             let mut ke1 = Ke1Message::new();
-            generate_ke1(PASSWORD, &mut ke1, &mut state).unwrap();
+            generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1, &mut state).unwrap();
         })
     });
     group.finish();
@@ -135,7 +135,7 @@ fn bench_auth_ke2(c: &mut Criterion) {
 
     let mut client_state = InitiatorState::new();
     let mut ke1 = Ke1Message::new();
-    generate_ke1(PASSWORD, &mut ke1, &mut client_state).unwrap();
+    generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
     let mut ke1_bytes = vec![0u8; KE1_LENGTH];
     protocol::write_ke1(
@@ -156,7 +156,7 @@ fn bench_auth_ke2(c: &mut Criterion) {
             || {
                 let mut cs = InitiatorState::new();
                 let mut k1 = Ke1Message::new();
-                generate_ke1(PASSWORD, &mut k1, &mut cs).unwrap();
+                generate_ke1(PASSWORD, ACCOUNT_ID, &mut k1, &mut cs).unwrap();
                 let mut k1b = vec![0u8; KE1_LENGTH];
                 protocol::write_ke1(
                     &k1.credential_request,
@@ -201,7 +201,7 @@ fn bench_auth_ke3(c: &mut Criterion) {
             || {
                 let mut cs = InitiatorState::new();
                 let mut k1 = Ke1Message::new();
-                generate_ke1(PASSWORD, &mut k1, &mut cs).unwrap();
+                generate_ke1(PASSWORD, ACCOUNT_ID, &mut k1, &mut cs).unwrap();
                 let mut k1b = vec![0u8; KE1_LENGTH];
                 protocol::write_ke1(
                     &k1.credential_request,
@@ -250,7 +250,7 @@ fn bench_auth_finish(c: &mut Criterion) {
             || {
                 let mut cs = InitiatorState::new();
                 let mut k1 = Ke1Message::new();
-                generate_ke1(PASSWORD, &mut k1, &mut cs).unwrap();
+                generate_ke1(PASSWORD, ACCOUNT_ID, &mut k1, &mut cs).unwrap();
                 let mut k1b = vec![0u8; KE1_LENGTH];
                 protocol::write_ke1(
                     &k1.credential_request,
@@ -306,7 +306,7 @@ fn bench_full_authentication(c: &mut Criterion) {
         b.iter(|| {
             let mut cs = InitiatorState::new();
             let mut k1 = Ke1Message::new();
-            generate_ke1(PASSWORD, &mut k1, &mut cs).unwrap();
+            generate_ke1(PASSWORD, ACCOUNT_ID, &mut k1, &mut cs).unwrap();
             let mut k1b = vec![0u8; KE1_LENGTH];
             protocol::write_ke1(
                 &k1.credential_request,

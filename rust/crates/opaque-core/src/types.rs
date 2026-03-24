@@ -117,6 +117,8 @@ pub mod labels {
 
     pub const TRANSCRIPT_CONTEXT: &[u8] = b"ECLIPTIX-OPAQUE-v1/Transcript";
 
+    pub const ACCOUNT_CONTEXT_BINDING: &[u8] = b"ECLIPTIX-OPAQUE-v2/AccountContext";
+
     pub const KSF_CONTEXT: &[u8] = b"ECLIPTIX-OPAQUE-v1/KSF";
 
     pub const KSF_SALT_LABEL: &[u8] = b"ECLIPTIX-OPAQUE-v1/KSF-Salt";
@@ -183,22 +185,23 @@ pub enum OpaqueError {
 }
 
 impl OpaqueError {
-    /// SECURITY: Callers MUST map all negative return codes to a single
-    /// generic "authentication failed" response when communicating with
-    /// external clients. Exposing distinct error codes to an attacker
-    /// enables account enumeration and protocol-stage fingerprinting.
+    /// FFI-safe return code mapping.
+    ///
+    /// SECURITY: protocol/authentication-stage failures are intentionally collapsed
+    /// into a single `-5` code to reduce account-enumeration and stage-fingerprinting
+    /// signals for remote callers.
     pub fn to_c_int(self) -> i32 {
         match self {
             OpaqueError::InvalidInput => -1,
             OpaqueError::CryptoError => -2,
-            OpaqueError::InvalidProtocolMessage => -3,
-            OpaqueError::ValidationError => -4,
+            OpaqueError::InvalidProtocolMessage => -5,
+            OpaqueError::ValidationError => -5,
             OpaqueError::AuthenticationError => -5,
             OpaqueError::InvalidPublicKey => -6,
             OpaqueError::AlreadyRegistered => -7,
-            OpaqueError::InvalidKemInput => -8,
-            OpaqueError::InvalidEnvelope => -9,
-            OpaqueError::UnsupportedVersion => -10,
+            OpaqueError::InvalidKemInput => -5,
+            OpaqueError::InvalidEnvelope => -5,
+            OpaqueError::UnsupportedVersion => -5,
         }
     }
 }
