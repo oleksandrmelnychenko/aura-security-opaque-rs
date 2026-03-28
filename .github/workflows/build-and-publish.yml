@@ -37,7 +37,7 @@ jobs:
             artifact: win-x64
             lib: opaque_ffi.dll
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -88,7 +88,7 @@ jobs:
             artifact: win-x64
             lib: opaque_ffi.dll
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -124,7 +124,7 @@ jobs:
     name: Build XCFramework (Portable Clients)
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -189,7 +189,7 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4

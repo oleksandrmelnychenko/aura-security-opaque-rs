@@ -35,7 +35,7 @@ jobs:
             output: benchmark_windows.txt
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
