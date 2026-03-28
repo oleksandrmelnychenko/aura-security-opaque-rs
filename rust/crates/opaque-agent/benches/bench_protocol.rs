@@ -3,9 +3,9 @@
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use opaque_agent::*;
-use opaque_core::{crypto, pq_kem};
 use opaque_core::protocol;
 use opaque_core::types::*;
+use opaque_core::{crypto, pq_kem};
 use opaque_relay::*;
 
 const ACCOUNT_ID: &[u8] = b"bench@example.com";
@@ -423,8 +423,12 @@ fn bench_ke3_primitives(c: &mut Criterion) {
                     .unwrap();
 
                 let mut session_key = [0u8; HASH_LENGTH];
-                crypto::key_derivation_expand(&prk, pq_labels::PQ_SESSION_KEY_INFO, &mut session_key)
-                    .unwrap();
+                crypto::key_derivation_expand(
+                    &prk,
+                    pq_labels::PQ_SESSION_KEY_INFO,
+                    &mut session_key,
+                )
+                .unwrap();
                 let mut master_key = [0u8; MASTER_KEY_LENGTH];
                 crypto::key_derivation_expand(&prk, pq_labels::PQ_MASTER_KEY_INFO, &mut master_key)
                     .unwrap();
@@ -451,12 +455,7 @@ fn bench_ke3_primitives(c: &mut Criterion) {
                 crypto::hmac_sha512(&initiator_mac_key, &transcript_input, &mut initiator_mac)
                     .unwrap();
 
-                criterion::black_box((
-                    session_key,
-                    master_key,
-                    responder_mac,
-                    initiator_mac,
-                ));
+                criterion::black_box((session_key, master_key, responder_mac, initiator_mac));
             },
             criterion::BatchSize::SmallInput,
         )

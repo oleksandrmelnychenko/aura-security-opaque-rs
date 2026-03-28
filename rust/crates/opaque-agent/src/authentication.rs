@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 use opaque_core::types::{
-    constant_time_eq, labels, pq, pq_labels, OpaqueError, OpaqueResult,
-    CLASSICAL_IKM_LENGTH, CREDENTIAL_RESPONSE_LENGTH, DH_COMPONENT_COUNT, ENVELOPE_LENGTH,
-    HASH_LENGTH, KE2_LENGTH, MAC_LENGTH, MASTER_KEY_LENGTH, MAX_SECURE_KEY_LENGTH, NONCE_LENGTH,
-    PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH, SECRETBOX_MAC_LENGTH,
+    constant_time_eq, labels, pq, pq_labels, OpaqueError, OpaqueResult, CLASSICAL_IKM_LENGTH,
+    CREDENTIAL_RESPONSE_LENGTH, DH_COMPONENT_COUNT, ENVELOPE_LENGTH, HASH_LENGTH, KE2_LENGTH,
+    MAC_LENGTH, MASTER_KEY_LENGTH, MAX_SECURE_KEY_LENGTH, NONCE_LENGTH, PRIVATE_KEY_LENGTH,
+    PUBLIC_KEY_LENGTH, SECRETBOX_MAC_LENGTH,
 };
 use opaque_core::{crypto, envelope, oprf, pq_kem, protocol};
 use zeroize::{Zeroize, Zeroizing};
@@ -119,7 +119,7 @@ pub fn generate_ke3(
             evaluated_elem
                 .try_into()
                 .map_err(|_| OpaqueError::InvalidProtocolMessage)?,
-            &mut *oprf_output,
+            &mut oprf_output,
         )?;
 
         let mut randomized_pwd = Zeroizing::new([0u8; HASH_LENGTH]);
@@ -147,9 +147,9 @@ pub fn generate_ke3(
             env_auth_tag,
             &*randomized_pwd,
             responder_public_key,
-            &mut *recovered_rpk,
-            &mut *recovered_isk,
-            &mut *recovered_ipk,
+            &mut recovered_rpk,
+            &mut recovered_isk,
+            &mut recovered_ipk,
         )?;
 
         if !constant_time_eq(&*recovered_rpk, responder_public_key) {
@@ -166,17 +166,17 @@ pub fn generate_ke3(
 
         let mut dh4 = Zeroizing::new([0u8; PUBLIC_KEY_LENGTH]);
 
-        crypto::scalar_mult(&recovered_isk, &recovered_rpk, &mut *dh1)?;
+        crypto::scalar_mult(&recovered_isk, &recovered_rpk, &mut dh1)?;
         crypto::scalar_mult(
             &state.initiator_ephemeral_private_key,
             &recovered_rpk,
-            &mut *dh2,
+            &mut dh2,
         )?;
-        crypto::scalar_mult(&recovered_isk, resp_eph_pk, &mut *dh3)?;
+        crypto::scalar_mult(&recovered_isk, resp_eph_pk, &mut dh3)?;
         crypto::scalar_mult(
             &state.initiator_ephemeral_private_key,
             resp_eph_pk,
-            &mut *dh4,
+            &mut dh4,
         )?;
 
         let mut kem_ss = Zeroizing::new([0u8; pq::KEM_SHARED_SECRET_LENGTH]);
@@ -212,11 +212,11 @@ pub fn generate_ke3(
         let mut transcript_hash = Zeroizing::new([0u8; HASH_LENGTH]);
         crypto::sha512_multi(
             &[labels::TRANSCRIPT_CONTEXT, &mac_input[..off]],
-            &mut *transcript_hash,
+            &mut transcript_hash,
         );
 
         let mut prk = Zeroizing::new([0u8; HASH_LENGTH]);
-        pq_kem::combine_key_material(&*classical_ikm, &*kem_ss, &*transcript_hash, &mut *prk)?;
+        pq_kem::combine_key_material(&*classical_ikm, &*kem_ss, &*transcript_hash, &mut prk)?;
 
         let mut session_key = Zeroizing::new([0u8; HASH_LENGTH]);
         crypto::key_derivation_expand(&*prk, pq_labels::PQ_SESSION_KEY_INFO, &mut *session_key)?;
@@ -228,7 +228,7 @@ pub fn generate_ke3(
         crypto::key_derivation_expand(&*prk, pq_labels::PQ_RESPONDER_MAC_INFO, &mut *resp_mac_key)?;
 
         let mut expected_resp_mac = Zeroizing::new([0u8; MAC_LENGTH]);
-        crypto::hmac_sha512(&*resp_mac_key, &mac_input[..off], &mut *expected_resp_mac)?;
+        crypto::hmac_sha512(&*resp_mac_key, &mac_input[..off], &mut expected_resp_mac)?;
 
         if !constant_time_eq(responder_mac, &*expected_resp_mac) {
             return Err(OpaqueError::AuthenticationError);

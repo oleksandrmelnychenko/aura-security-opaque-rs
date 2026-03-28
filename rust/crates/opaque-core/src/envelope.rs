@@ -92,6 +92,7 @@ pub fn open(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn open_raw(
     nonce: &[u8],
     ciphertext: &[u8],
@@ -107,7 +108,10 @@ pub fn open_raw(
     }
 
     const PLAINTEXT_LEN: usize = PUBLIC_KEY_LENGTH + PRIVATE_KEY_LENGTH + PUBLIC_KEY_LENGTH;
-    if nonce.len() != NONCE_LENGTH || ciphertext.len() != PLAINTEXT_LEN || auth_tag.len() != SECRETBOX_MAC_LENGTH {
+    if nonce.len() != NONCE_LENGTH
+        || ciphertext.len() != PLAINTEXT_LEN
+        || auth_tag.len() != SECRETBOX_MAC_LENGTH
+    {
         return Err(OpaqueError::InvalidEnvelope);
     }
 
@@ -116,8 +120,9 @@ pub fn open_raw(
 
     let mut plaintext = [0u8; PLAINTEXT_LEN];
     let nonce: &[u8; NONCE_LENGTH] = nonce.try_into().map_err(|_| OpaqueError::InvalidEnvelope)?;
-    let tag: &[u8; SECRETBOX_MAC_LENGTH] =
-        auth_tag.try_into().map_err(|_| OpaqueError::InvalidEnvelope)?;
+    let tag: &[u8; SECRETBOX_MAC_LENGTH] = auth_tag
+        .try_into()
+        .map_err(|_| OpaqueError::InvalidEnvelope)?;
 
     let result = crypto::decrypt_envelope(&auth_key, ciphertext, nonce, tag, &mut plaintext);
 
