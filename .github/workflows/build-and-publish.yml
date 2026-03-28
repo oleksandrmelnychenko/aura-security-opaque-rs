@@ -61,7 +61,7 @@ jobs:
             -exec cp {} artifacts/${{ matrix.artifact }}/ \;
           ls -la artifacts/${{ matrix.artifact }}/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: native-portable-${{ matrix.artifact }}
           path: artifacts/${{ matrix.artifact }}/
@@ -113,7 +113,7 @@ jobs:
             -exec cp {} artifacts/${{ matrix.artifact }}/ \;
           ls -la artifacts/${{ matrix.artifact }}/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: native-server-${{ matrix.artifact }}
           path: artifacts/${{ matrix.artifact }}/
@@ -172,7 +172,7 @@ jobs:
           cd dist/apple && zip -r EcliptixOPAQUE.xcframework.zip EcliptixOPAQUE.xcframework
           swift package compute-checksum EcliptixOPAQUE.xcframework.zip > EcliptixOPAQUE.xcframework.zip.checksum
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: apple-xcframework
           path: dist/apple/
