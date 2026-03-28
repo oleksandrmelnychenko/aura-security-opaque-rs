@@ -24,7 +24,7 @@ pub fn create_registration_request(
         return Err(OpaqueError::ValidationError);
     }
     if state.is_expired() {
-        state.phase = InitiatorPhase::Finished;
+        state.invalidate();
         return Err(OpaqueError::ValidationError);
     }
 
@@ -58,7 +58,7 @@ pub fn finalize_registration(
         return Err(OpaqueError::ValidationError);
     }
     if state.is_expired() {
-        state.phase = InitiatorPhase::Finished;
+        state.invalidate();
         return Err(OpaqueError::ValidationError);
     }
 
@@ -70,10 +70,7 @@ pub fn finalize_registration(
 
     crypto::validate_public_key(responder_public_key)?;
     if !constant_time_eq(responder_public_key, expected_rpk) {
-        state.secure_key.zeroize();
-        state.secure_key_len = 0;
-        state.oblivious_prf_blind_scalar.zeroize();
-        state.phase = InitiatorPhase::Finished;
+        state.invalidate();
         return Err(OpaqueError::AuthenticationError);
     }
 
@@ -125,4 +122,38 @@ pub fn finalize_registration(
 
     state.phase = InitiatorPhase::RegistrationFinalized;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opaque_core::types::{is_all_zero, REGISTRATION_RESPONSE_WIRE_LENGTH};
+    use opaque_relay::OpaqueResponder;
+
+    #[test]
+    fn expired_registration_state_is_zeroized() {
+        let responder = OpaqueResponder::generate().unwrap();
+        let initiator = OpaqueInitiator::new(responder.public_key()).unwrap();
+
+        let mut state = InitiatorState::new();
+        let mut request = RegistrationRequest::new();
+        create_registration_request(b"correct horse battery staple", &mut request, &mut state)
+            .unwrap();
+
+        assert!(!is_all_zero(&state.secure_key[..state.secure_key_len]));
+        assert!(!is_all_zero(&state.initiator_private_key));
+        assert!(!is_all_zero(&state.oblivious_prf_blind_scalar));
+
+        state.expire_for_test();
+
+        let response = [0u8; REGISTRATION_RESPONSE_WIRE_LENGTH];
+        let mut record = RegistrationRecord::new();
+        let result = finalize_registration(&initiator, &response, &mut state, &mut record);
+        assert_eq!(result, Err(OpaqueError::ValidationError));
+        assert_eq!(state.phase, InitiatorPhase::Finished);
+        assert!(is_all_zero(&state.secure_key));
+        assert_eq!(state.secure_key_len, 0);
+        assert!(is_all_zero(&state.initiator_private_key));
+        assert!(is_all_zero(&state.oblivious_prf_blind_scalar));
+    }
 }

@@ -3,6 +3,9 @@
 
 use std::time::Instant;
 
+#[cfg(test)]
+use std::time::Duration;
+
 use opaque_core::types::{
     pq, OpaqueResult, ENVELOPE_LENGTH, HASH_LENGTH, MAC_LENGTH, MASTER_KEY_LENGTH,
     MAX_SECURE_KEY_LENGTH, NONCE_LENGTH, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH,
@@ -69,6 +72,16 @@ impl InitiatorState {
         Instant::now()
             .checked_duration_since(self.created_at)
             .is_none_or(|d| d.as_secs() >= STATE_MAX_LIFETIME_SECS)
+    }
+
+    pub fn invalidate(&mut self) {
+        self.zeroize();
+        self.phase = InitiatorPhase::Finished;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn expire_for_test(&mut self) {
+        self.created_at = Instant::now() - Duration::from_secs(STATE_MAX_LIFETIME_SECS + 1);
     }
 
     pub fn new() -> Self {

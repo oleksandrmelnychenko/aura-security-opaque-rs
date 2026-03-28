@@ -79,8 +79,10 @@
 //!
 //! ## Strict credential requirements
 //!
-//! `opaque_relay_generate_ke2` requires a valid persisted credential record.
-//! Missing or malformed credentials are rejected.
+//! `opaque_relay_generate_ke2` accepts either a valid persisted credential record
+//! or `NULL, 0` for unknown accounts. In the latter case it derives deterministic
+//! fake credentials and still returns a syntactically valid KE2 to avoid account
+//! enumeration via response shape or timing.
 
 use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
@@ -97,8 +99,7 @@ use opaque_core::types::{
 };
 use opaque_relay::{
     build_credentials, create_registration_response, generate_ke2, responder_finish, Ke2Message,
-    OpaqueResponder, RegistrationResponse, ResponderCredentials, ResponderKeyPair, ResponderPhase,
-    ResponderState,
+    OpaqueResponder, RegistrationResponse, ResponderCredentials, ResponderKeyPair, ResponderState,
 };
 
 use crate::{ffi_error_to_int, result_to_int};
@@ -182,9 +183,7 @@ fn acquire_relay_state(
 }
 
 fn invalidate_relay_state(state_handle: &mut RelayStateHandle) {
-    state_handle.state.zeroize();
-    state_handle.state.phase = ResponderPhase::Finished;
-    state_handle.state.handshake_complete = false;
+    state_handle.state.invalidate();
 }
 
 fn acquire_relay_keypair(
@@ -332,35 +331,6 @@ pub unsafe extern "C" fn opaque_relay_keypair_get_public_key(
             public_key,
             PUBLIC_KEY_LENGTH,
         );
-        0
-    }))
-    .unwrap_or(FFI_PANIC)
-}
-
-/// Copies the relay's 32-byte OPRF seed into the provided buffer.
-///
-/// Persist this seed alongside the relay's static keypair. Existing registration
-/// records cannot be used after restart unless the same OPRF seed is restored.
-///
-/// # Safety
-///
-/// `handle` must be a valid, non-null pointer to a `RelayKeypairHandle` previously
-/// returned by `opaque_relay_keypair_generate`. `oprf_seed` must point to a buffer
-/// of at least `OPRF_SEED_LENGTH` (32) bytes.
-#[no_mangle]
-pub unsafe extern "C" fn opaque_relay_keypair_get_oprf_seed(
-    handle: *mut std::ffi::c_void,
-    oprf_seed: *mut u8,
-    seed_buffer_size: usize,
-) -> i32 {
-    panic::catch_unwind(AssertUnwindSafe(|| {
-        if oprf_seed.is_null() || seed_buffer_size < OPRF_SEED_LENGTH {
-            return OpaqueError::InvalidInput.to_c_int();
-        }
-        let Some((kh, _kg)) = acquire_relay_keypair(handle) else {
-            return FFI_BUSY;
-        };
-        ptr::copy_nonoverlapping(kh.oprf_seed.as_ptr(), oprf_seed, OPRF_SEED_LENGTH);
         0
     }))
     .unwrap_or(FFI_PANIC)
@@ -683,8 +653,8 @@ pub unsafe extern "C" fn opaque_relay_build_credentials(
 /// | `ke1_length`        | `usize`       | —      | Must be exactly 1273                     |
 /// | `account_id`        | `*const u8`   | ≥ 1    | Account identifier for OPRF key derivation|
 /// | `account_id_length` | `usize`       | —      | Length of account_id in bytes            |
-/// | `credentials_data`  | `*const u8`   | 169     | Stored credentials (required)            |
-/// | `credentials_length`| `usize`       | —      | Must be exactly 169                      |
+/// | `credentials_data`  | `*const u8`   | 169/0   | Stored credentials, or `NULL` for unknown user |
+/// | `credentials_length`| `usize`       | —      | Must be exactly 169, or 0 for unknown user |
 /// | `ke2_data`          | `*mut u8`     | ≥ 1377 | Output buffer for KE2 message            |
 /// | `ke2_buffer_size`   | `usize`       | —      | Size of output buffer (must be ≥ 1377)   |
 /// | `state_handle`      | `*mut void`   | —      | Fresh state from `opaque_relay_state_create`|
@@ -692,7 +662,7 @@ pub unsafe extern "C" fn opaque_relay_build_credentials(
 /// # Returns
 ///
 /// `0` on success. The 1377-byte KE2 is written to `ke2_data`.
-/// Returns `-101` when `credentials_data` cannot be parsed as a valid
+/// Returns `-101` when a non-null `credentials_data` buffer cannot be parsed as a valid
 /// registration record.
 ///
 /// # Safety
@@ -700,7 +670,8 @@ pub unsafe extern "C" fn opaque_relay_build_credentials(
 /// - `relay_handle` must be a valid pointer to a `RelayHandle` from `opaque_relay_create`.
 /// - `ke1_data` must point to at least `KE1_LENGTH` readable bytes.
 /// - `account_id` must point to at least `account_id_length` readable bytes (non-zero).
-/// - `credentials_data` must point to at least `RESPONDER_CREDENTIALS_LENGTH` readable bytes.
+/// - `credentials_data` must point to at least `RESPONDER_CREDENTIALS_LENGTH` readable bytes
+///   when `credentials_length != 0`. Pass `NULL, 0` to execute the unknown-user fake-credential path.
 /// - `ke2_data` must point to a writable buffer of at least `KE2_LENGTH` bytes.
 /// - `state_handle` must be a valid pointer to a `RelayStateHandle` from
 ///   `opaque_relay_state_create`.
@@ -722,12 +693,19 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
             || ke1_length != KE1_LENGTH
             || account_id.is_null()
             || account_id_length == 0
-            || credentials_data.is_null()
-            || credentials_length != RESPONDER_CREDENTIALS_LENGTH
             || ke2_data.is_null()
             || ke2_buffer_size < KE2_LENGTH
         {
             return OpaqueError::InvalidInput.to_c_int();
+        }
+        match credentials_length {
+            0 => {}
+            RESPONDER_CREDENTIALS_LENGTH => {
+                if credentials_data.is_null() {
+                    return OpaqueError::InvalidInput.to_c_int();
+                }
+            }
+            _ => return OpaqueError::InvalidInput.to_c_int(),
         }
 
         let Some((rh, _rg)) = acquire_relay(relay_handle) else {
@@ -740,9 +718,29 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
         let ke1 = std::slice::from_raw_parts(ke1_data, ke1_length);
         let aid = std::slice::from_raw_parts(account_id, account_id_length);
 
-        let mut creds = ResponderCredentials::new();
-        let cred_data = std::slice::from_raw_parts(credentials_data, credentials_length);
-        let record_view = match protocol::parse_registration_record(cred_data) {
+        let mut credential_wire = [0u8; RESPONDER_CREDENTIALS_LENGTH];
+        match credentials_length {
+            RESPONDER_CREDENTIALS_LENGTH => {
+                let input = std::slice::from_raw_parts(credentials_data, credentials_length);
+                credential_wire.copy_from_slice(input);
+            }
+            0 => {
+                let fake_envelope = [0u8; opaque_core::types::ENVELOPE_LENGTH];
+                let fake_public_key = rh.responder.public_key();
+                if protocol::write_registration_record(
+                    &fake_envelope,
+                    fake_public_key,
+                    &mut credential_wire,
+                )
+                .is_err()
+                {
+                    return OpaqueError::InvalidInput.to_c_int();
+                }
+            }
+            _ => return OpaqueError::InvalidInput.to_c_int(),
+        }
+
+        let record_view = match protocol::parse_registration_record(&credential_wire) {
             Ok(view) => view,
             Err(_) => return FFI_CORRUPTED_RECORD,
         };
@@ -751,11 +749,19 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
         {
             return FFI_CORRUPTED_RECORD;
         }
-        creds.envelope = record_view.envelope.to_vec();
-        creds
-            .initiator_public_key
-            .copy_from_slice(record_view.initiator_public_key);
-        creds.registered = true;
+
+        let mut creds = ResponderCredentials::new();
+        match credentials_length {
+            RESPONDER_CREDENTIALS_LENGTH => {
+                creds.envelope = record_view.envelope.to_vec();
+                creds
+                    .initiator_public_key
+                    .copy_from_slice(record_view.initiator_public_key);
+                creds.registered = true;
+            }
+            0 => {}
+            _ => return OpaqueError::InvalidInput.to_c_int(),
+        }
 
         let mut ke2 = Ke2Message::new();
 
@@ -985,8 +991,101 @@ pub extern "C" fn opaque_relay_get_kem_ciphertext_length() -> usize {
     pq::KEM_CIPHERTEXT_LENGTH
 }
 
-/// Returns `OPRF_SEED_LENGTH` (32). Use to allocate OPRF seed buffers.
-#[no_mangle]
-pub extern "C" fn opaque_relay_get_oprf_seed_length() -> usize {
-    OPRF_SEED_LENGTH
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent_ffi::{
+        opaque_agent_create, opaque_agent_destroy, opaque_agent_generate_ke1,
+        opaque_agent_generate_ke3, opaque_agent_state_create, opaque_agent_state_destroy,
+    };
+
+    #[test]
+    fn ffi_unknown_user_returns_fake_ke2() {
+        unsafe {
+            let mut keypair_handle: *mut std::ffi::c_void = ptr::null_mut();
+            assert_eq!(opaque_relay_keypair_generate(&mut keypair_handle), 0);
+
+            let mut relay_public_key = [0u8; PUBLIC_KEY_LENGTH];
+            assert_eq!(
+                opaque_relay_keypair_get_public_key(
+                    keypair_handle,
+                    relay_public_key.as_mut_ptr(),
+                    relay_public_key.len(),
+                ),
+                0
+            );
+
+            let mut relay_handle: *mut std::ffi::c_void = ptr::null_mut();
+            assert_eq!(opaque_relay_create(keypair_handle, &mut relay_handle), 0);
+
+            let mut agent_handle: *mut std::ffi::c_void = ptr::null_mut();
+            assert_eq!(
+                opaque_agent_create(
+                    relay_public_key.as_ptr(),
+                    relay_public_key.len(),
+                    &mut agent_handle,
+                ),
+                0
+            );
+
+            let mut agent_state: *mut std::ffi::c_void = ptr::null_mut();
+            assert_eq!(opaque_agent_state_create(&mut agent_state), 0);
+
+            let password = b"correct horse battery staple";
+            let account_id = b"ghost@example.com";
+            let mut ke1 = vec![0u8; KE1_LENGTH];
+            assert_eq!(
+                opaque_agent_generate_ke1(
+                    agent_handle,
+                    password.as_ptr(),
+                    password.len(),
+                    account_id.as_ptr(),
+                    account_id.len(),
+                    agent_state,
+                    ke1.as_mut_ptr(),
+                    ke1.len(),
+                ),
+                0
+            );
+
+            let mut relay_state: *mut std::ffi::c_void = ptr::null_mut();
+            assert_eq!(opaque_relay_state_create(&mut relay_state), 0);
+
+            let mut ke2 = vec![0u8; KE2_LENGTH];
+            assert_eq!(
+                opaque_relay_generate_ke2(
+                    relay_handle,
+                    ke1.as_ptr(),
+                    ke1.len(),
+                    account_id.as_ptr(),
+                    account_id.len(),
+                    ptr::null(),
+                    0,
+                    ke2.as_mut_ptr(),
+                    ke2.len(),
+                    relay_state,
+                ),
+                0
+            );
+
+            let mut ke3 = vec![0u8; KE3_LENGTH];
+            assert_eq!(
+                opaque_agent_generate_ke3(
+                    agent_handle,
+                    ke2.as_ptr(),
+                    ke2.len(),
+                    agent_state,
+                    ke3.as_mut_ptr(),
+                    ke3.len(),
+                ),
+                -5
+            );
+
+            opaque_agent_state_destroy(&mut agent_state);
+            opaque_agent_destroy(&mut agent_handle);
+            opaque_relay_state_destroy(&mut relay_state);
+            opaque_relay_destroy(&mut relay_handle);
+            opaque_relay_keypair_destroy(&mut keypair_handle);
+        }
+    }
 }

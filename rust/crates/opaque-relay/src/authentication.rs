@@ -2,16 +2,87 @@
 // SPDX-License-Identifier: MIT
 
 use opaque_core::types::{
-    constant_time_eq, labels, pq, pq_labels, OpaqueError, OpaqueResult, CLASSICAL_IKM_LENGTH,
-    CREDENTIAL_RESPONSE_LENGTH, DH_COMPONENT_COUNT, ENVELOPE_LENGTH, HASH_LENGTH, KE1_LENGTH,
-    KE3_LENGTH, MAC_LENGTH, MASTER_KEY_LENGTH, NONCE_LENGTH, PUBLIC_KEY_LENGTH,
+    constant_time_eq, ct_select_bytes, labels, pq, pq_labels, OpaqueError, OpaqueResult,
+    CLASSICAL_IKM_LENGTH, CREDENTIAL_RESPONSE_LENGTH, DH_COMPONENT_COUNT, ENVELOPE_LENGTH,
+    HASH_LENGTH, KE1_LENGTH, KE3_LENGTH, MAC_LENGTH, MASTER_KEY_LENGTH, NONCE_LENGTH,
+    PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH,
 };
 use opaque_core::{crypto, pq_kem, protocol};
+use subtle::Choice;
 use zeroize::Zeroize;
 
 use crate::state::{
     Ke2Message, OpaqueResponder, ResponderCredentials, ResponderPhase, ResponderState,
 };
+
+const TRANSCRIPT_INPUT_LENGTH: usize = 2 * NONCE_LENGTH
+    + DH_COMPONENT_COUNT * PUBLIC_KEY_LENGTH
+    + CREDENTIAL_RESPONSE_LENGTH
+    + pq::KEM_CIPHERTEXT_LENGTH
+    + pq::KEM_PUBLIC_KEY_LENGTH
+    + HASH_LENGTH;
+
+fn select_credentials(
+    responder: &OpaqueResponder,
+    account_id: &[u8],
+    credentials: &ResponderCredentials,
+) -> OpaqueResult<([u8; PUBLIC_KEY_LENGTH], [u8; ENVELOPE_LENGTH])> {
+    let mut fake_material = responder.evaluator().derive_fake_material(account_id)?;
+    let mut fake_private_key = [0u8; PRIVATE_KEY_LENGTH];
+    let mut fake_public_key = [0u8; PUBLIC_KEY_LENGTH];
+    crypto::derive_key_pair(&fake_material, &mut fake_private_key, &mut fake_public_key)?;
+
+    let mut fake_envelope = [0u8; ENVELOPE_LENGTH];
+    crypto::key_derivation_expand(
+        &fake_material,
+        labels::FAKE_CREDENTIALS_CONTEXT,
+        &mut fake_envelope,
+    )?;
+    fake_material.zeroize();
+    fake_private_key.zeroize();
+
+    let mut real_public_key = [0u8; PUBLIC_KEY_LENGTH];
+    let mut real_envelope = [0u8; ENVELOPE_LENGTH];
+    if credentials.registered {
+        if credentials.envelope.len() != ENVELOPE_LENGTH {
+            fake_public_key.zeroize();
+            fake_envelope.zeroize();
+            return Err(OpaqueError::ValidationError);
+        }
+
+        crypto::validate_public_key(&credentials.initiator_public_key)?;
+        let envelope: &[u8; ENVELOPE_LENGTH] = credentials
+            .envelope
+            .as_slice()
+            .try_into()
+            .map_err(|_| OpaqueError::ValidationError)?;
+        real_public_key.copy_from_slice(&credentials.initiator_public_key);
+        real_envelope.copy_from_slice(envelope);
+    }
+
+    let choice = Choice::from(u8::from(credentials.registered));
+    let mut selected_public_key = [0u8; PUBLIC_KEY_LENGTH];
+    let mut selected_envelope = [0u8; ENVELOPE_LENGTH];
+    ct_select_bytes(
+        &mut selected_public_key,
+        &real_public_key,
+        &fake_public_key,
+        choice,
+    );
+    ct_select_bytes(
+        &mut selected_envelope,
+        &real_envelope,
+        &fake_envelope,
+        choice,
+    );
+
+    fake_public_key.zeroize();
+    fake_envelope.zeroize();
+    real_public_key.zeroize();
+    real_envelope.zeroize();
+
+    Ok((selected_public_key, selected_envelope))
+}
 
 pub fn generate_ke2(
     responder: &OpaqueResponder,
@@ -28,14 +99,11 @@ pub fn generate_ke2(
         return Err(OpaqueError::ValidationError);
     }
     if state.is_expired() {
-        state.phase = ResponderPhase::Finished;
+        state.invalidate();
         return Err(OpaqueError::ValidationError);
     }
     if account_id.is_empty() {
         return Err(OpaqueError::InvalidInput);
-    }
-    if !credentials.registered || credentials.envelope.len() != ENVELOPE_LENGTH {
-        return Err(OpaqueError::ValidationError);
     }
 
     let ke1 = protocol::parse_ke1(ke1_data)?;
@@ -45,12 +113,7 @@ pub fn generate_ke2(
         .initiator_public_key
         .try_into()
         .map_err(|_| OpaqueError::InvalidProtocolMessage)?;
-    let selected_pk = credentials.initiator_public_key;
-    let selected_envelope: &[u8; ENVELOPE_LENGTH] = credentials
-        .envelope
-        .as_slice()
-        .try_into()
-        .map_err(|_| OpaqueError::ValidationError)?;
+    let (selected_pk, selected_envelope) = select_credentials(responder, account_id, credentials)?;
     let mut account_context_hash = [0u8; HASH_LENGTH];
     crypto::sha512_multi(
         &[labels::ACCOUNT_CONTEXT_BINDING, account_id],
@@ -80,7 +143,7 @@ pub fn generate_ke2(
     let evaluated_elem = responder.evaluator().evaluate_oprf(cred_req, account_id)?;
 
     ke2.credential_response[..PUBLIC_KEY_LENGTH].copy_from_slice(&evaluated_elem);
-    ke2.credential_response[PUBLIC_KEY_LENGTH..].copy_from_slice(selected_envelope);
+    ke2.credential_response[PUBLIC_KEY_LENGTH..].copy_from_slice(&selected_envelope);
 
     let mut dh1 = [0u8; PUBLIC_KEY_LENGTH];
     let mut dh2 = [0u8; PUBLIC_KEY_LENGTH];
@@ -115,13 +178,7 @@ pub fn generate_ke2(
     classical_ikm[2 * PUBLIC_KEY_LENGTH..3 * PUBLIC_KEY_LENGTH].copy_from_slice(&dh3);
     classical_ikm[3 * PUBLIC_KEY_LENGTH..].copy_from_slice(&dh4);
 
-    let mac_input_size = 2 * NONCE_LENGTH
-        + DH_COMPONENT_COUNT * PUBLIC_KEY_LENGTH
-        + CREDENTIAL_RESPONSE_LENGTH
-        + pq::KEM_CIPHERTEXT_LENGTH
-        + pq::KEM_PUBLIC_KEY_LENGTH
-        + HASH_LENGTH;
-    let mut mac_input = vec![0u8; mac_input_size];
+    let mut mac_input = [0u8; TRANSCRIPT_INPUT_LENGTH];
     let mut off = 0;
 
     let mut append = |data: &[u8]| {
@@ -141,7 +198,7 @@ pub fn generate_ke2(
 
     let mut transcript_hash = [0u8; HASH_LENGTH];
     crypto::sha512_multi(
-        &[labels::TRANSCRIPT_CONTEXT, &mac_input],
+        &[labels::TRANSCRIPT_CONTEXT, &mac_input[..off]],
         &mut transcript_hash,
     );
 
@@ -191,9 +248,7 @@ pub fn responder_finish(
         return Err(OpaqueError::ValidationError);
     }
     if state.is_expired() {
-        state.session_key.zeroize();
-        state.master_key.zeroize();
-        state.phase = ResponderPhase::Finished;
+        state.invalidate();
         return Err(OpaqueError::ValidationError);
     }
     if opaque_core::types::is_all_zero(&state.session_key) {
@@ -240,4 +295,121 @@ pub fn responder_finish(
     state.phase = ResponderPhase::Finished;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opaque_agent::{
+        create_registration_request, finalize_registration, generate_ke1, Ke1Message,
+        OpaqueInitiator, RegistrationRecord, RegistrationRequest,
+    };
+    use opaque_core::types::{
+        is_all_zero, KE3_LENGTH, REGISTRATION_RECORD_LENGTH, REGISTRATION_REQUEST_WIRE_LENGTH,
+        REGISTRATION_RESPONSE_WIRE_LENGTH,
+    };
+
+    #[test]
+    fn expired_responder_state_is_zeroized() {
+        let account_id = b"alice@example.com";
+        let password = b"correct horse battery staple";
+        let responder = OpaqueResponder::generate().unwrap();
+        let initiator = OpaqueInitiator::new(responder.public_key()).unwrap();
+
+        let mut registration_state = opaque_agent::InitiatorState::new();
+        let mut registration_request = RegistrationRequest::new();
+        create_registration_request(password, &mut registration_request, &mut registration_state)
+            .unwrap();
+
+        let mut registration_request_wire = vec![0u8; REGISTRATION_REQUEST_WIRE_LENGTH];
+        protocol::write_registration_request(
+            &registration_request.data,
+            &mut registration_request_wire,
+        )
+        .unwrap();
+
+        let mut registration_response = crate::RegistrationResponse::new();
+        crate::create_registration_response(
+            &responder,
+            &registration_request_wire,
+            account_id,
+            &mut registration_response,
+        )
+        .unwrap();
+
+        let mut registration_response_wire = vec![0u8; REGISTRATION_RESPONSE_WIRE_LENGTH];
+        protocol::write_registration_response(
+            &registration_response.data[..PUBLIC_KEY_LENGTH],
+            &registration_response.data[PUBLIC_KEY_LENGTH..],
+            &mut registration_response_wire,
+        )
+        .unwrap();
+
+        let mut record = RegistrationRecord::new();
+        finalize_registration(
+            &initiator,
+            &registration_response_wire,
+            &mut registration_state,
+            &mut record,
+        )
+        .unwrap();
+
+        let mut record_bytes = vec![0u8; REGISTRATION_RECORD_LENGTH];
+        protocol::write_registration_record(
+            &record.envelope,
+            &record.initiator_public_key,
+            &mut record_bytes,
+        )
+        .unwrap();
+
+        let mut credentials = ResponderCredentials::new();
+        crate::build_credentials(&record_bytes, &mut credentials).unwrap();
+
+        let mut client_state = opaque_agent::InitiatorState::new();
+        let mut ke1 = Ke1Message::new();
+        generate_ke1(password, account_id, &mut ke1, &mut client_state).unwrap();
+
+        let mut ke1_bytes = vec![0u8; KE1_LENGTH];
+        protocol::write_ke1(
+            &ke1.credential_request,
+            &ke1.initiator_public_key,
+            &ke1.initiator_nonce,
+            &ke1.pq_ephemeral_public_key,
+            &mut ke1_bytes,
+        )
+        .unwrap();
+
+        let mut state = ResponderState::new();
+        let mut ke2 = Ke2Message::new();
+        generate_ke2(
+            &responder,
+            &ke1_bytes,
+            account_id,
+            &credentials,
+            &mut ke2,
+            &mut state,
+        )
+        .unwrap();
+
+        assert!(!is_all_zero(&state.responder_private_key));
+        assert!(!is_all_zero(&state.responder_ephemeral_private_key));
+        assert!(!is_all_zero(&state.expected_initiator_mac));
+        assert!(!is_all_zero(&state.pq_shared_secret));
+
+        state.expire_for_test();
+
+        let ke3 = [0u8; KE3_LENGTH];
+        let mut session_key = [0u8; HASH_LENGTH];
+        let mut master_key = [0u8; MASTER_KEY_LENGTH];
+        let result = responder_finish(&ke3, &mut state, &mut session_key, &mut master_key);
+        assert_eq!(result, Err(OpaqueError::ValidationError));
+        assert_eq!(state.phase, ResponderPhase::Finished);
+        assert!(!state.handshake_complete);
+        assert!(is_all_zero(&state.responder_private_key));
+        assert!(is_all_zero(&state.responder_ephemeral_private_key));
+        assert!(is_all_zero(&state.expected_initiator_mac));
+        assert!(is_all_zero(&state.pq_shared_secret));
+        assert!(is_all_zero(&state.session_key));
+        assert!(is_all_zero(&state.master_key));
+    }
 }

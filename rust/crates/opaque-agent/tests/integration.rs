@@ -208,6 +208,58 @@ fn wrong_password_fails_authentication() {
 }
 
 #[test]
+fn unknown_user_uses_fake_credentials_and_fails_client_side() {
+    let password = b"correct horse battery staple";
+
+    let responder = OpaqueResponder::generate().unwrap();
+    let initiator = OpaqueInitiator::new(responder.public_key()).unwrap();
+
+    let mut client_state = InitiatorState::new();
+    let mut ke1 = Ke1Message::new();
+    generate_ke1(password, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
+
+    let mut ke1_bytes = vec![0u8; KE1_LENGTH];
+    protocol::write_ke1(
+        &ke1.credential_request,
+        &ke1.initiator_public_key,
+        &ke1.initiator_nonce,
+        &ke1.pq_ephemeral_public_key,
+        &mut ke1_bytes,
+    )
+    .unwrap();
+
+    let credentials = ResponderCredentials::new();
+    let mut server_state = ResponderState::new();
+    let mut ke2 = Ke2Message::new();
+    generate_ke2(
+        &responder,
+        &ke1_bytes,
+        ACCOUNT_ID,
+        &credentials,
+        &mut ke2,
+        &mut server_state,
+    )
+    .unwrap();
+
+    let mut ke2_bytes = vec![0u8; KE2_LENGTH];
+    protocol::write_ke2(
+        &ke2.responder_nonce,
+        &ke2.responder_public_key,
+        &ke2.credential_response,
+        &ke2.responder_mac,
+        &ke2.kem_ciphertext,
+        &mut ke2_bytes,
+    )
+    .unwrap();
+
+    let mut ke3 = Ke3Message::new();
+    let result = generate_ke3(&initiator, &ke2_bytes, &mut client_state, &mut ke3);
+    assert_eq!(result, Err(OpaqueError::AuthenticationError));
+    assert_eq!(server_state.phase, ResponderPhase::Ke2Generated);
+    assert!(!server_state.expected_initiator_mac.iter().all(|&b| b == 0));
+}
+
+#[test]
 fn multiple_registrations_produce_different_records() {
     let password = b"test password";
 

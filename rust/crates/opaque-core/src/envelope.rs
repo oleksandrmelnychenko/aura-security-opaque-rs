@@ -80,15 +80,34 @@ pub fn open(
     initiator_private_key: &mut [u8; PRIVATE_KEY_LENGTH],
     initiator_public_key: &mut [u8; PUBLIC_KEY_LENGTH],
 ) -> OpaqueResult<()> {
+    open_raw(
+        &envelope.nonce,
+        &envelope.ciphertext,
+        &envelope.auth_tag,
+        randomized_pwd,
+        known_responder_public_key,
+        responder_public_key,
+        initiator_private_key,
+        initiator_public_key,
+    )
+}
+
+pub fn open_raw(
+    nonce: &[u8],
+    ciphertext: &[u8],
+    auth_tag: &[u8],
+    randomized_pwd: &[u8],
+    known_responder_public_key: &[u8; PUBLIC_KEY_LENGTH],
+    responder_public_key: &mut [u8; PUBLIC_KEY_LENGTH],
+    initiator_private_key: &mut [u8; PRIVATE_KEY_LENGTH],
+    initiator_public_key: &mut [u8; PUBLIC_KEY_LENGTH],
+) -> OpaqueResult<()> {
     if randomized_pwd.is_empty() {
         return Err(OpaqueError::InvalidInput);
     }
 
     const PLAINTEXT_LEN: usize = PUBLIC_KEY_LENGTH + PRIVATE_KEY_LENGTH + PUBLIC_KEY_LENGTH;
-    if envelope.nonce.len() != NONCE_LENGTH
-        || envelope.ciphertext.len() != PLAINTEXT_LEN
-        || envelope.auth_tag.len() != SECRETBOX_MAC_LENGTH
-    {
+    if nonce.len() != NONCE_LENGTH || ciphertext.len() != PLAINTEXT_LEN || auth_tag.len() != SECRETBOX_MAC_LENGTH {
         return Err(OpaqueError::InvalidEnvelope);
     }
 
@@ -96,19 +115,11 @@ pub fn open(
     derive_envelope_key(known_responder_public_key, randomized_pwd, &mut auth_key)?;
 
     let mut plaintext = [0u8; PLAINTEXT_LEN];
-    let nonce: &[u8; NONCE_LENGTH] = envelope
-        .nonce
-        .as_slice()
-        .try_into()
-        .map_err(|_| OpaqueError::InvalidEnvelope)?;
-    let tag: &[u8; SECRETBOX_MAC_LENGTH] = envelope
-        .auth_tag
-        .as_slice()
-        .try_into()
-        .map_err(|_| OpaqueError::InvalidEnvelope)?;
+    let nonce: &[u8; NONCE_LENGTH] = nonce.try_into().map_err(|_| OpaqueError::InvalidEnvelope)?;
+    let tag: &[u8; SECRETBOX_MAC_LENGTH] =
+        auth_tag.try_into().map_err(|_| OpaqueError::InvalidEnvelope)?;
 
-    let result =
-        crypto::decrypt_envelope(&auth_key, &envelope.ciphertext, nonce, tag, &mut plaintext);
+    let result = crypto::decrypt_envelope(&auth_key, ciphertext, nonce, tag, &mut plaintext);
 
     auth_key.zeroize();
 

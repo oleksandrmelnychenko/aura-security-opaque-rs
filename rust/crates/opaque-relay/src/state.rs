@@ -3,6 +3,9 @@
 
 use std::time::Instant;
 
+#[cfg(test)]
+use std::time::Duration;
+
 use opaque_core::oprf::{InMemoryEvaluator, OprfEvaluator};
 use opaque_core::types::{
     constant_time_eq, pq, OpaqueError, OpaqueResult, CREDENTIAL_RESPONSE_LENGTH, ENVELOPE_LENGTH,
@@ -55,6 +58,17 @@ impl ResponderState {
         Instant::now()
             .checked_duration_since(self.created_at)
             .is_none_or(|d| d.as_secs() >= STATE_MAX_LIFETIME_SECS)
+    }
+
+    pub fn invalidate(&mut self) {
+        self.zeroize();
+        self.phase = ResponderPhase::Finished;
+        self.handshake_complete = false;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn expire_for_test(&mut self) {
+        self.created_at = Instant::now() - Duration::from_secs(STATE_MAX_LIFETIME_SECS + 1);
     }
 
     pub fn new() -> Self {

@@ -81,6 +81,31 @@ cargo build --release
 
 Pure Rust — no system dependencies, no C compiler required.
 
+### FFI Build Profiles
+
+For Swift clients, build **portable** artifacts only:
+
+```bash
+./rust/scripts/build-client-portable.sh
+```
+
+```powershell
+.\rust\scripts\build-client-portable.ps1
+```
+
+For server-side relay deployments on controlled hardware, you can use
+native CPU tuning (`-C target-cpu=native`) for better throughput:
+
+```bash
+./rust/scripts/build-server-native.sh
+```
+
+```powershell
+.\rust\scripts\build-server-native.ps1
+```
+
+Optional target triple can be passed as an argument in all scripts.
+
 ## Test
 
 ```bash

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Oleksandr Melnychenko. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use opaque_agent::*;
 use opaque_core::protocol;
 use opaque_core::types::*;
@@ -67,7 +67,7 @@ fn make_ke1_bytes() -> (InitiatorState, Vec<u8>) {
     (state, ke1_bytes)
 }
 
-fn bench_relay_throughput(c: &mut Criterion) {
+fn bench_relay_finish_only(c: &mut Criterion) {
     let (responder, _, credentials) = setup();
     let initiator = OpaqueInitiator::new(responder.public_key()).unwrap();
 
@@ -75,7 +75,7 @@ fn bench_relay_throughput(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.sample_size(50);
 
-    group.bench_function("ke2_and_finish", |b| {
+    group.bench_function("finish_only", |b| {
         b.iter_batched(
             || {
                 let (mut cs, ke1_bytes) = make_ke1_bytes();
@@ -114,7 +114,15 @@ fn bench_relay_throughput(c: &mut Criterion) {
             |(mut ss, ke3_bytes)| {
                 let mut sk = [0u8; HASH_LENGTH];
                 let mut mk = [0u8; MASTER_KEY_LENGTH];
-                responder_finish(&ke3_bytes, &mut ss, &mut sk, &mut mk).unwrap();
+                responder_finish(
+                    black_box(&ke3_bytes),
+                    black_box(&mut ss),
+                    black_box(&mut sk),
+                    black_box(&mut mk),
+                )
+                .unwrap();
+                black_box(sk);
+                black_box(mk);
             },
             criterion::BatchSize::SmallInput,
         )
@@ -140,19 +148,78 @@ fn bench_relay_ke2_only(c: &mut Criterion) {
             let mut ss = ResponderState::new();
             let mut k2 = Ke2Message::new();
             generate_ke2(
-                &responder,
-                ke1_bytes,
-                ACCOUNT_ID,
-                &credentials,
-                &mut k2,
-                &mut ss,
+                black_box(&responder),
+                black_box(ke1_bytes),
+                black_box(ACCOUNT_ID),
+                black_box(&credentials),
+                black_box(&mut k2),
+                black_box(&mut ss),
             )
             .unwrap();
+            black_box(k2.responder_mac);
         })
     });
 
     group.finish();
 }
 
-criterion_group!(throughput, bench_relay_throughput, bench_relay_ke2_only,);
+fn bench_client_ke3_only(c: &mut Criterion) {
+    let (responder, _, credentials) = setup();
+    let initiator = OpaqueInitiator::new(responder.public_key()).unwrap();
+
+    let mut group = c.benchmark_group("relay_throughput");
+    group.throughput(Throughput::Elements(1));
+    group.sample_size(30);
+
+    group.bench_function("ke3_only", |b| {
+        b.iter_batched(
+            || {
+                let (cs, ke1_bytes) = make_ke1_bytes();
+                let mut ss = ResponderState::new();
+                let mut k2 = Ke2Message::new();
+                generate_ke2(
+                    &responder,
+                    &ke1_bytes,
+                    ACCOUNT_ID,
+                    &credentials,
+                    &mut k2,
+                    &mut ss,
+                )
+                .unwrap();
+                let mut k2b = vec![0u8; KE2_LENGTH];
+                protocol::write_ke2(
+                    &k2.responder_nonce,
+                    &k2.responder_public_key,
+                    &k2.credential_response,
+                    &k2.responder_mac,
+                    &k2.kem_ciphertext,
+                    &mut k2b,
+                )
+                .unwrap();
+                (cs, k2b)
+            },
+            |(mut cs, k2b)| {
+                let mut ke3 = Ke3Message::new();
+                generate_ke3(
+                    black_box(&initiator),
+                    black_box(&k2b),
+                    black_box(&mut cs),
+                    black_box(&mut ke3),
+                )
+                .unwrap();
+                black_box(ke3.initiator_mac);
+            },
+            criterion::BatchSize::SmallInput,
+        )
+    });
+
+    group.finish();
+}
+
+criterion_group!(
+    throughput,
+    bench_relay_ke2_only,
+    bench_client_ke3_only,
+    bench_relay_finish_only,
+);
 criterion_main!(throughput);

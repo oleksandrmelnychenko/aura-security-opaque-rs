@@ -3,6 +3,7 @@
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use opaque_agent::*;
+use opaque_core::{crypto, pq_kem};
 use opaque_core::protocol;
 use opaque_core::types::*;
 use opaque_relay::*;
@@ -348,6 +349,122 @@ fn bench_full_authentication(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_ke3_primitives(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ke3_primitives");
+    group.sample_size(30);
+
+    group.bench_function("pq_decapsulate_only", |b| {
+        b.iter_batched(
+            || {
+                let mut pk = [0u8; pq::KEM_PUBLIC_KEY_LENGTH];
+                let mut sk = [0u8; pq::KEM_SECRET_KEY_LENGTH];
+                pq_kem::keypair_generate(&mut pk, &mut sk).unwrap();
+                let mut ct = [0u8; pq::KEM_CIPHERTEXT_LENGTH];
+                let mut ss = [0u8; pq::KEM_SHARED_SECRET_LENGTH];
+                pq_kem::encapsulate(&pk, &mut ct, &mut ss).unwrap();
+                (sk, ct)
+            },
+            |(sk, ct)| {
+                let mut out = [0u8; pq::KEM_SHARED_SECRET_LENGTH];
+                pq_kem::decapsulate(&sk, &ct, &mut out).unwrap();
+                criterion::black_box(out);
+            },
+            criterion::BatchSize::SmallInput,
+        )
+    });
+
+    group.bench_function("ristretto_4dh_only", |b| {
+        b.iter_batched(
+            || {
+                let sk1 = crypto::random_nonzero_scalar().unwrap();
+                let sk2 = crypto::random_nonzero_scalar().unwrap();
+                let pk1 = crypto::scalarmult_base(&sk1).unwrap();
+                let pk2 = crypto::scalarmult_base(&sk2).unwrap();
+                (sk1, sk2, pk1, pk2)
+            },
+            |(sk1, sk2, pk1, pk2)| {
+                let mut dh1 = [0u8; PUBLIC_KEY_LENGTH];
+                let mut dh2 = [0u8; PUBLIC_KEY_LENGTH];
+                let mut dh3 = [0u8; PUBLIC_KEY_LENGTH];
+                let mut dh4 = [0u8; PUBLIC_KEY_LENGTH];
+                crypto::scalar_mult(&sk1, &pk1, &mut dh1).unwrap();
+                crypto::scalar_mult(&sk1, &pk2, &mut dh2).unwrap();
+                crypto::scalar_mult(&sk2, &pk1, &mut dh3).unwrap();
+                crypto::scalar_mult(&sk2, &pk2, &mut dh4).unwrap();
+                criterion::black_box((dh1, dh2, dh3, dh4));
+            },
+            criterion::BatchSize::SmallInput,
+        )
+    });
+
+    group.bench_function("hkdf_mac_transcript_only", |b| {
+        b.iter_batched(
+            || {
+                let mut classical_ikm = [0u8; CLASSICAL_IKM_LENGTH];
+                let mut pq_ss = [0u8; pq::KEM_SHARED_SECRET_LENGTH];
+                let mut transcript_hash = [0u8; HASH_LENGTH];
+                crypto::random_bytes(&mut classical_ikm).unwrap();
+                crypto::random_bytes(&mut pq_ss).unwrap();
+                crypto::random_bytes(&mut transcript_hash).unwrap();
+
+                let transcript_input_size = 2 * NONCE_LENGTH
+                    + DH_COMPONENT_COUNT * PUBLIC_KEY_LENGTH
+                    + CREDENTIAL_RESPONSE_LENGTH
+                    + pq::KEM_CIPHERTEXT_LENGTH
+                    + pq::KEM_PUBLIC_KEY_LENGTH
+                    + HASH_LENGTH;
+                let mut transcript_input = vec![0u8; transcript_input_size];
+                crypto::random_bytes(&mut transcript_input).unwrap();
+                (classical_ikm, pq_ss, transcript_hash, transcript_input)
+            },
+            |(classical_ikm, pq_ss, transcript_hash, transcript_input)| {
+                let mut prk = [0u8; HASH_LENGTH];
+                pq_kem::combine_key_material(&classical_ikm, &pq_ss, &transcript_hash, &mut prk)
+                    .unwrap();
+
+                let mut session_key = [0u8; HASH_LENGTH];
+                crypto::key_derivation_expand(&prk, pq_labels::PQ_SESSION_KEY_INFO, &mut session_key)
+                    .unwrap();
+                let mut master_key = [0u8; MASTER_KEY_LENGTH];
+                crypto::key_derivation_expand(&prk, pq_labels::PQ_MASTER_KEY_INFO, &mut master_key)
+                    .unwrap();
+
+                let mut responder_mac_key = [0u8; MAC_LENGTH];
+                crypto::key_derivation_expand(
+                    &prk,
+                    pq_labels::PQ_RESPONDER_MAC_INFO,
+                    &mut responder_mac_key,
+                )
+                .unwrap();
+                let mut initiator_mac_key = [0u8; MAC_LENGTH];
+                crypto::key_derivation_expand(
+                    &prk,
+                    pq_labels::PQ_INITIATOR_MAC_INFO,
+                    &mut initiator_mac_key,
+                )
+                .unwrap();
+
+                let mut responder_mac = [0u8; MAC_LENGTH];
+                let mut initiator_mac = [0u8; MAC_LENGTH];
+                crypto::hmac_sha512(&responder_mac_key, &transcript_input, &mut responder_mac)
+                    .unwrap();
+                crypto::hmac_sha512(&initiator_mac_key, &transcript_input, &mut initiator_mac)
+                    .unwrap();
+
+                criterion::black_box((
+                    session_key,
+                    master_key,
+                    responder_mac,
+                    initiator_mac,
+                ));
+            },
+            criterion::BatchSize::SmallInput,
+        )
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     registration,
     bench_registration_request,
@@ -362,4 +479,5 @@ criterion_group!(
     bench_auth_finish,
 );
 criterion_group!(full, bench_full_authentication,);
-criterion_main!(registration, authentication, full);
+criterion_group!(primitives, bench_ke3_primitives,);
+criterion_main!(registration, authentication, full, primitives);

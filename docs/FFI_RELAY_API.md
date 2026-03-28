@@ -403,14 +403,16 @@ This step:
 | `ke1_length` | `size_t` | — | Must be exactly 1273 |
 | `account_id` | `const uint8_t *` | >= 1 | Account identifier for OPRF key derivation |
 | `account_id_length` | `size_t` | — | Length of account_id |
-| `credentials_data` | `const uint8_t *` | 169 | Stored credentials (required) |
-| `credentials_length` | `size_t` | — | Must be exactly 169 |
+| `credentials_data` | `const uint8_t *` | 169 / 0 | Stored credentials, or `NULL` for unknown user |
+| `credentials_length` | `size_t` | — | Must be exactly 169, or 0 for unknown user |
 | `ke2_data` | `uint8_t *` | >= 1377 | Output buffer for KE2 message |
 | `ke2_buffer_size` | `size_t` | — | Must be >= 1377 |
 | `state_handle` | `void *` | — | Fresh state from `opaque_relay_state_create` |
 
 **Returns:** `0` on success. Send the 1377-byte KE2 to the client.
-Returns `-101` when `credentials_data` is malformed or invalid.
+Pass `NULL, 0` for unknown users; the relay will derive deterministic fake credentials
+and still emit a valid KE2 to reduce account-enumeration signals.
+Returns `-101` when a non-null `credentials_data` buffer is malformed or invalid.
 
 ---
 

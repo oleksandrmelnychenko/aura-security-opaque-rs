@@ -17,8 +17,9 @@ permissions:
   attestations: write
 
 jobs:
-  build-native:
-    name: Build (${{ matrix.target }})
+  # Portable binaries for broad compatibility (client-facing artifacts, generic hosts).
+  build-native-portable:
+    name: Build Portable (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -47,7 +48,7 @@ jobs:
         with:
           workspaces: rust
 
-      - name: Build FFI library
+      - name: Build FFI library (portable)
         working-directory: rust
         run: cargo build --release --package opaque-ffi --target ${{ matrix.target }}
 
@@ -62,12 +63,65 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: native-${{ matrix.artifact }}
+          name: native-portable-${{ matrix.artifact }}
+          path: artifacts/${{ matrix.artifact }}/
+          retention-days: 7
+
+  # Server-only binaries tuned for the runner CPU micro-architecture.
+  # Do not use these artifacts for client distribution.
+  build-native-server:
+    name: Build Server Native (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: linux-x64
+            lib: libopaque_ffi.so
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact: osx-arm64
+            lib: libopaque_ffi.dylib
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: win-x64
+            lib: opaque_ffi.dll
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Build FFI library (server native)
+        working-directory: rust
+        env:
+          RUSTFLAGS: -C target-cpu=native
+        run: cargo build --release --package opaque-ffi --target ${{ matrix.target }}
+
+      - name: Prepare artifacts
+        shell: bash
+        run: |
+          mkdir -p artifacts/${{ matrix.artifact }}
+          find rust/target/${{ matrix.target }}/release -maxdepth 1 \
+            \( -name "*.so" -o -name "*.dylib" -o -name "*.dll" \) \
+            -exec cp {} artifacts/${{ matrix.artifact }}/ \;
+          ls -la artifacts/${{ matrix.artifact }}/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-server-${{ matrix.artifact }}
           path: artifacts/${{ matrix.artifact }}/
           retention-days: 7
 
   build-apple-xcframework:
-    name: Build XCFramework
+    # Swift clients must consume portable artifacts.
+    name: Build XCFramework (Portable Clients)
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -131,7 +185,7 @@ jobs:
 
   publish-release:
     name: GitHub Release
-    needs: [build-native, build-apple-xcframework]
+    needs: [build-native-portable, build-native-server, build-apple-xcframework]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -175,5 +229,10 @@ jobs:
             - macOS arm64
             - Windows x64
             - iOS (arm64, simulator)
+
+            ### Native Artifact Profiles
+            - `native-portable-*`: portable binaries for broad CPU compatibility.
+            - `native-server-*`: server-only binaries built with `-C target-cpu=native`.
+              Use only on controlled server hardware; do not ship to clients.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
