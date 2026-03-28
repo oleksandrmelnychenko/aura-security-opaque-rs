@@ -1,17 +1,9 @@
-use std::ffi::{c_char, c_void, CStr};
+use std::ffi::c_void;
 use std::ptr;
 
 use opaque_ffi as _;
 
-#[repr(C)]
-struct FfiOpaqueError {
-    code: i32,
-    message: *mut c_char,
-}
-
 unsafe extern "C" {
-    fn opaque_error_free(error: *mut FfiOpaqueError);
-
     fn opaque_relay_keypair_generate(handle: *mut *mut c_void) -> i32;
     fn opaque_relay_keypair_destroy(handle_ptr: *mut *mut c_void);
     fn opaque_relay_keypair_get_public_key(
@@ -65,13 +57,9 @@ unsafe extern "C" {
         relay_public_key: *const u8,
         key_length: usize,
         out_handle: *mut *mut c_void,
-        out_error: *mut FfiOpaqueError,
     ) -> i32;
     fn opaque_agent_destroy(handle_ptr: *mut *mut c_void);
-    fn opaque_agent_state_create(
-        out_handle: *mut *mut c_void,
-        out_error: *mut FfiOpaqueError,
-    ) -> i32;
+    fn opaque_agent_state_create(out_handle: *mut *mut c_void) -> i32;
     fn opaque_agent_state_destroy(handle_ptr: *mut *mut c_void);
     fn opaque_agent_create_registration_request(
         agent_handle: *mut c_void,
@@ -80,7 +68,6 @@ unsafe extern "C" {
         state_handle: *mut c_void,
         request_out: *mut u8,
         request_length: usize,
-        out_error: *mut FfiOpaqueError,
     ) -> i32;
     fn opaque_agent_finalize_registration(
         agent_handle: *mut c_void,
@@ -89,16 +76,16 @@ unsafe extern "C" {
         state_handle: *mut c_void,
         record_out: *mut u8,
         record_length: usize,
-        out_error: *mut FfiOpaqueError,
     ) -> i32;
     fn opaque_agent_generate_ke1(
         agent_handle: *mut c_void,
         password: *const u8,
         password_length: usize,
+        account_id: *const u8,
+        account_id_length: usize,
         state_handle: *mut c_void,
         ke1_out: *mut u8,
         ke1_length: usize,
-        out_error: *mut FfiOpaqueError,
     ) -> i32;
     fn opaque_agent_generate_ke3(
         agent_handle: *mut c_void,
@@ -107,7 +94,6 @@ unsafe extern "C" {
         state_handle: *mut c_void,
         ke3_out: *mut u8,
         ke3_length: usize,
-        out_error: *mut FfiOpaqueError,
     ) -> i32;
     fn opaque_agent_finish(
         agent_handle: *mut c_void,
@@ -116,7 +102,6 @@ unsafe extern "C" {
         session_key_length: usize,
         master_key_out: *mut u8,
         master_key_length: usize,
-        out_error: *mut FfiOpaqueError,
     ) -> i32;
 }
 
@@ -129,13 +114,6 @@ const KE2_LENGTH: usize = 1377;
 const KE3_LENGTH: usize = 65;
 const SESSION_KEY_LENGTH: usize = 64;
 const MASTER_KEY_LENGTH: usize = 32;
-
-fn fresh_error() -> FfiOpaqueError {
-    FfiOpaqueError {
-        code: 0,
-        message: ptr::null_mut(),
-    }
-}
 
 #[test]
 fn ffi_agent_and_relay_roundtrip() {
@@ -159,23 +137,18 @@ fn ffi_agent_and_relay_roundtrip() {
         let mut relay = ptr::null_mut();
         assert_eq!(opaque_relay_create(keypair, &mut relay), 0);
 
-        let mut agent_error = fresh_error();
         let mut agent = ptr::null_mut();
         assert_eq!(
             opaque_agent_create(
                 relay_public_key.as_ptr(),
                 relay_public_key.len(),
                 &mut agent,
-                &mut agent_error,
             ),
             0
         );
 
         let mut registration_state = ptr::null_mut();
-        assert_eq!(
-            opaque_agent_state_create(&mut registration_state, &mut fresh_error()),
-            0
-        );
+        assert_eq!(opaque_agent_state_create(&mut registration_state), 0);
 
         let mut registration_request = vec![0u8; REGISTRATION_REQUEST_LENGTH];
         assert_eq!(
@@ -186,7 +159,6 @@ fn ffi_agent_and_relay_roundtrip() {
                 registration_state,
                 registration_request.as_mut_ptr(),
                 registration_request.len(),
-                &mut fresh_error(),
             ),
             0
         );
@@ -214,7 +186,6 @@ fn ffi_agent_and_relay_roundtrip() {
                 registration_state,
                 registration_record.as_mut_ptr(),
                 registration_record.len(),
-                &mut fresh_error(),
             ),
             0
         );
@@ -235,10 +206,7 @@ fn ffi_agent_and_relay_roundtrip() {
 
         let mut agent_state = ptr::null_mut();
         let mut relay_state = ptr::null_mut();
-        assert_eq!(
-            opaque_agent_state_create(&mut agent_state, &mut fresh_error()),
-            0
-        );
+        assert_eq!(opaque_agent_state_create(&mut agent_state), 0);
         assert_eq!(opaque_relay_state_create(&mut relay_state), 0);
 
         let mut ke1 = vec![0u8; KE1_LENGTH];
@@ -247,10 +215,11 @@ fn ffi_agent_and_relay_roundtrip() {
                 agent,
                 PASSWORD.as_ptr(),
                 PASSWORD.len(),
+                ACCOUNT_ID.as_ptr(),
+                ACCOUNT_ID.len(),
                 agent_state,
                 ke1.as_mut_ptr(),
                 ke1.len(),
-                &mut fresh_error(),
             ),
             0
         );
@@ -281,7 +250,6 @@ fn ffi_agent_and_relay_roundtrip() {
                 agent_state,
                 ke3.as_mut_ptr(),
                 ke3.len(),
-                &mut fresh_error(),
             ),
             0
         );
@@ -312,7 +280,6 @@ fn ffi_agent_and_relay_roundtrip() {
                 agent_session_key.len(),
                 agent_master_key.as_mut_ptr(),
                 agent_master_key.len(),
-                &mut fresh_error(),
             ),
             0
         );
@@ -339,18 +306,9 @@ fn ffi_agent_invalid_public_key_reports_error() {
     unsafe {
         let zero_key = [0u8; PUBLIC_KEY_LENGTH];
         let mut handle = ptr::null_mut();
-        let mut error = fresh_error();
 
-        let rc = opaque_agent_create(zero_key.as_ptr(), zero_key.len(), &mut handle, &mut error);
+        let rc = opaque_agent_create(zero_key.as_ptr(), zero_key.len(), &mut handle);
         assert_ne!(rc, 0);
-        assert_eq!(error.code, -6);
-        assert!(!error.message.is_null());
-
-        let message = CStr::from_ptr(error.message).to_string_lossy().into_owned();
-        assert!(message.contains("public key") || message.contains("invalid"));
-
-        opaque_error_free(&mut error);
-        assert!(error.message.is_null());
         assert!(handle.is_null());
     }
 }

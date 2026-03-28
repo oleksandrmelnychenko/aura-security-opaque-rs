@@ -66,7 +66,7 @@ fn regression_ke3_retry_after_failed_verification_is_rejected() {
 
     let mut client_state = InitiatorState::new();
     let mut ke1 = Ke1Message::new();
-    generate_ke1(PASSWORD, &mut ke1, &mut client_state).unwrap();
+    generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
     let mut ke1_bytes = vec![0u8; KE1_LENGTH];
     protocol::write_ke1(
