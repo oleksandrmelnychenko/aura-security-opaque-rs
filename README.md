@@ -113,6 +113,15 @@ cd rust
 cargo test --workspace
 ```
 
+Focused security regressions for the agent/relay boundary live in:
+
+```bash
+cd rust
+cargo test -p opaque-agent --test security_regressions
+```
+
+That suite covers known failure classes such as identity-point rejection, registration-response MITM rejection, fake-credential fail-closed behavior for unknown users, and rejection of corrupted registered credentials.
+
 ## Benchmarks
 
 ```bash

@@ -52,6 +52,7 @@ You should receive a response within 48 hours.
 - Zeroization of sensitive data via `zeroize` crate
 - No heap allocation of raw secrets
 - Ephemeral keys destroyed immediately after use
+- Focused regression coverage for protocol edge cases in `rust/crates/opaque-agent/tests/security_regressions.rs`
 
 ### Build Security
 

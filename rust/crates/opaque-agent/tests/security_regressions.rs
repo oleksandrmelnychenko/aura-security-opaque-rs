@@ -1,18 +1,20 @@
 use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::traits::Identity;
 use opaque_agent::{
-    create_registration_request, finalize_registration, generate_ke1, generate_ke3, InitiatorState,
-    Ke1Message, Ke3Message, OpaqueInitiator, RegistrationRecord, RegistrationRequest,
+    create_registration_request, finalize_registration, generate_ke1, generate_ke3, InitiatorPhase,
+    InitiatorState, Ke1Message, Ke3Message, OpaqueInitiator, RegistrationRecord,
+    RegistrationRequest,
 };
 use opaque_core::types::{
-    Envelope, HASH_LENGTH, KE1_LENGTH, KE2_LENGTH, KE3_LENGTH, MASTER_KEY_LENGTH, NONCE_LENGTH,
-    OPRF_SEED_LENGTH, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH, REGISTRATION_RECORD_LENGTH,
-    REGISTRATION_REQUEST_WIRE_LENGTH, REGISTRATION_RESPONSE_WIRE_LENGTH, SECRETBOX_MAC_LENGTH,
+    Envelope, OpaqueError, HASH_LENGTH, KE1_LENGTH, KE2_LENGTH, KE3_LENGTH, MAC_LENGTH,
+    MASTER_KEY_LENGTH, NONCE_LENGTH, OPRF_SEED_LENGTH, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH,
+    REGISTRATION_RECORD_LENGTH, REGISTRATION_REQUEST_WIRE_LENGTH,
+    REGISTRATION_RESPONSE_WIRE_LENGTH, SECRETBOX_MAC_LENGTH,
 };
 use opaque_core::{crypto, envelope, oprf, protocol};
 use opaque_relay::{
     build_credentials, create_registration_response, generate_ke2, responder_finish, Ke2Message,
-    OpaqueResponder, RegistrationResponse, ResponderCredentials, ResponderState,
+    OpaqueResponder, RegistrationResponse, ResponderCredentials, ResponderPhase, ResponderState,
 };
 
 const ACCOUNT_ID: &[u8] = b"alice@example.com";
@@ -47,26 +49,29 @@ fn register_record(responder: &OpaqueResponder) -> Vec<u8> {
     out
 }
 
-#[test]
-fn regression_identity_point_injection_is_rejected() {
-    let responder = OpaqueResponder::generate().unwrap();
-    let identity = RistrettoPoint::identity().compress().to_bytes();
-    let mut response = RegistrationResponse::new();
-
-    let result = create_registration_response(&responder, &identity, ACCOUNT_ID, &mut response);
-    assert!(result.is_err());
+fn registered_credentials(record: &[u8]) -> ResponderCredentials {
+    let mut creds = ResponderCredentials::new();
+    build_credentials(record, &mut creds).unwrap();
+    creds
 }
 
-#[test]
-#[ignore = "covered by integration.rs fast path"]
-fn regression_ke3_retry_after_failed_verification_is_rejected() {
-    let responder = OpaqueResponder::generate().unwrap();
-    let record = register_record(&responder);
+fn prepare_auth_session(
+    responder: &OpaqueResponder,
+    password: &[u8],
+    account_id: &[u8],
+    credentials: &ResponderCredentials,
+) -> (
+    OpaqueInitiator,
+    InitiatorState,
+    ResponderState,
+    Vec<u8>,
+    [u8; MAC_LENGTH],
+) {
     let initiator = OpaqueInitiator::new(responder.public_key()).unwrap();
 
     let mut client_state = InitiatorState::new();
     let mut ke1 = Ke1Message::new();
-    generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
+    generate_ke1(password, account_id, &mut ke1, &mut client_state).unwrap();
 
     let mut ke1_bytes = vec![0u8; KE1_LENGTH];
     protocol::write_ke1(
@@ -78,16 +83,13 @@ fn regression_ke3_retry_after_failed_verification_is_rejected() {
     )
     .unwrap();
 
-    let mut creds = ResponderCredentials::new();
-    build_credentials(&record, &mut creds).unwrap();
-
     let mut server_state = ResponderState::new();
     let mut ke2 = Ke2Message::new();
     generate_ke2(
-        &responder,
+        responder,
         &ke1_bytes,
-        ACCOUNT_ID,
-        &creds,
+        account_id,
+        credentials,
         &mut ke2,
         &mut server_state,
     )
@@ -104,29 +106,247 @@ fn regression_ke3_retry_after_failed_verification_is_rejected() {
     )
     .unwrap();
 
+    (
+        initiator,
+        client_state,
+        server_state,
+        ke2_bytes,
+        ke2.responder_mac,
+    )
+}
+
+#[test]
+fn regression_identity_point_injection_is_rejected() {
+    let responder = OpaqueResponder::generate().unwrap();
+    let identity = RistrettoPoint::identity().compress().to_bytes();
+    let mut request = [0u8; REGISTRATION_REQUEST_WIRE_LENGTH];
+    protocol::write_registration_request(&identity, &mut request).unwrap();
+    let mut response = RegistrationResponse::new();
+
+    let result = create_registration_response(&responder, &request, ACCOUNT_ID, &mut response);
+    assert_eq!(result, Err(OpaqueError::InvalidInput));
+}
+
+#[test]
+fn regression_registration_response_from_wrong_server_is_terminal() {
+    let responder = OpaqueResponder::generate().unwrap();
+    let attacker = OpaqueResponder::generate().unwrap();
+    let initiator = OpaqueInitiator::new(responder.public_key()).unwrap();
+
+    let mut state = InitiatorState::new();
+    let mut request = RegistrationRequest::new();
+    create_registration_request(PASSWORD, &mut request, &mut state).unwrap();
+
+    let mut request_wire = vec![0u8; REGISTRATION_REQUEST_WIRE_LENGTH];
+    protocol::write_registration_request(&request.data, &mut request_wire).unwrap();
+
+    let mut attacker_response = RegistrationResponse::new();
+    create_registration_response(&attacker, &request_wire, ACCOUNT_ID, &mut attacker_response)
+        .unwrap();
+
+    let mut attacker_response_wire = vec![0u8; REGISTRATION_RESPONSE_WIRE_LENGTH];
+    protocol::write_registration_response(
+        &attacker_response.data[..PUBLIC_KEY_LENGTH],
+        &attacker_response.data[PUBLIC_KEY_LENGTH..],
+        &mut attacker_response_wire,
+    )
+    .unwrap();
+
+    let mut record = RegistrationRecord::new();
+    assert_eq!(
+        finalize_registration(&initiator, &attacker_response_wire, &mut state, &mut record),
+        Err(OpaqueError::AuthenticationError)
+    );
+    assert_eq!(state.phase, InitiatorPhase::Finished);
+
+    let mut legit_response = RegistrationResponse::new();
+    create_registration_response(&responder, &request_wire, ACCOUNT_ID, &mut legit_response)
+        .unwrap();
+
+    let mut legit_response_wire = vec![0u8; REGISTRATION_RESPONSE_WIRE_LENGTH];
+    protocol::write_registration_response(
+        &legit_response.data[..PUBLIC_KEY_LENGTH],
+        &legit_response.data[PUBLIC_KEY_LENGTH..],
+        &mut legit_response_wire,
+    )
+    .unwrap();
+
+    assert_eq!(
+        finalize_registration(&initiator, &legit_response_wire, &mut state, &mut record),
+        Err(OpaqueError::ValidationError)
+    );
+}
+
+#[test]
+fn regression_corrupted_registration_record_public_key_is_rejected() {
+    let responder = OpaqueResponder::generate().unwrap();
+    let mut record = register_record(&responder);
+    let identity = RistrettoPoint::identity().compress().to_bytes();
+    let pk_offset = REGISTRATION_RECORD_LENGTH - PUBLIC_KEY_LENGTH;
+    record[pk_offset..].copy_from_slice(&identity);
+
+    let mut creds = ResponderCredentials::new();
+    assert_eq!(
+        build_credentials(&record, &mut creds),
+        Err(OpaqueError::InvalidPublicKey)
+    );
+}
+
+#[test]
+fn regression_invalid_registered_credentials_do_not_fall_back_to_fake_path() {
+    let responder = OpaqueResponder::generate().unwrap();
+    let record = register_record(&responder);
+    let mut creds = registered_credentials(&record);
+    creds.initiator_public_key = RistrettoPoint::identity().compress().to_bytes();
+
+    let mut client_state = InitiatorState::new();
+    let mut ke1 = Ke1Message::new();
+    generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
+
+    let mut ke1_bytes = vec![0u8; KE1_LENGTH];
+    protocol::write_ke1(
+        &ke1.credential_request,
+        &ke1.initiator_public_key,
+        &ke1.initiator_nonce,
+        &ke1.pq_ephemeral_public_key,
+        &mut ke1_bytes,
+    )
+    .unwrap();
+
+    let mut server_state = ResponderState::new();
+    let mut ke2 = Ke2Message::new();
+    assert_eq!(
+        generate_ke2(
+            &responder,
+            &ke1_bytes,
+            ACCOUNT_ID,
+            &creds,
+            &mut ke2,
+            &mut server_state
+        ),
+        Err(OpaqueError::InvalidPublicKey)
+    );
+}
+
+#[test]
+fn regression_invalid_registered_envelope_length_is_rejected() {
+    let responder = OpaqueResponder::generate().unwrap();
+    let record = register_record(&responder);
+    let mut creds = registered_credentials(&record);
+    creds.envelope.pop();
+
+    let mut client_state = InitiatorState::new();
+    let mut ke1 = Ke1Message::new();
+    generate_ke1(PASSWORD, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
+
+    let mut ke1_bytes = vec![0u8; KE1_LENGTH];
+    protocol::write_ke1(
+        &ke1.credential_request,
+        &ke1.initiator_public_key,
+        &ke1.initiator_nonce,
+        &ke1.pq_ephemeral_public_key,
+        &mut ke1_bytes,
+    )
+    .unwrap();
+
+    let mut server_state = ResponderState::new();
+    let mut ke2 = Ke2Message::new();
+    assert_eq!(
+        generate_ke2(
+            &responder,
+            &ke1_bytes,
+            ACCOUNT_ID,
+            &creds,
+            &mut ke2,
+            &mut server_state
+        ),
+        Err(OpaqueError::ValidationError)
+    );
+}
+
+#[test]
+fn regression_ke3_retry_after_failed_verification_is_rejected() {
+    let responder = OpaqueResponder::generate().unwrap();
+    let record = register_record(&responder);
+    let creds = registered_credentials(&record);
+    let (initiator, mut client_state, mut server_state, ke2_bytes, _) =
+        prepare_auth_session(&responder, PASSWORD, ACCOUNT_ID, &creds);
+
     let mut ke3 = Ke3Message::new();
     generate_ke3(&initiator, &ke2_bytes, &mut client_state, &mut ke3).unwrap();
 
     let mut tampered_ke3 = [0u8; KE3_LENGTH];
     protocol::write_ke3(&ke3.initiator_mac, &mut tampered_ke3).unwrap();
-    tampered_ke3[0] ^= 0xFF;
+    tampered_ke3[1] ^= 0xFF;
 
     let mut session_key = [0u8; HASH_LENGTH];
     let mut master_key = [0u8; MASTER_KEY_LENGTH];
-    assert!(responder_finish(
-        &tampered_ke3,
-        &mut server_state,
-        &mut session_key,
-        &mut master_key
-    )
-    .is_err());
-    assert!(responder_finish(
-        &[0u8; KE3_LENGTH],
-        &mut server_state,
-        &mut session_key,
-        &mut master_key
-    )
-    .is_err());
+    assert_eq!(
+        responder_finish(
+            &tampered_ke3,
+            &mut server_state,
+            &mut session_key,
+            &mut master_key
+        ),
+        Err(OpaqueError::AuthenticationError)
+    );
+    assert_eq!(
+        responder_finish(
+            &[0u8; KE3_LENGTH],
+            &mut server_state,
+            &mut session_key,
+            &mut master_key
+        ),
+        Err(OpaqueError::ValidationError)
+    );
+}
+
+#[test]
+fn regression_unknown_user_fake_credentials_fail_closed_on_both_sides() {
+    let responder = OpaqueResponder::generate().unwrap();
+    let unknown_account = b"ghost@example.com";
+    let creds = ResponderCredentials::new();
+    let (initiator, mut client_state, mut server_state, ke2_bytes, responder_mac) =
+        prepare_auth_session(&responder, PASSWORD, unknown_account, &creds);
+
+    assert!(!responder_mac.iter().all(|&b| b == 0));
+    assert_eq!(server_state.phase, ResponderPhase::Ke2Generated);
+
+    let mut ke3 = Ke3Message::new();
+    assert_eq!(
+        generate_ke3(&initiator, &ke2_bytes, &mut client_state, &mut ke3),
+        Err(OpaqueError::AuthenticationError)
+    );
+    assert_eq!(client_state.phase, InitiatorPhase::Finished);
+    assert_eq!(
+        generate_ke3(&initiator, &ke2_bytes, &mut client_state, &mut ke3),
+        Err(OpaqueError::ValidationError)
+    );
+
+    let zero_mac = [0u8; MAC_LENGTH];
+    let mut zero_ke3 = [0u8; KE3_LENGTH];
+    protocol::write_ke3(&zero_mac, &mut zero_ke3).unwrap();
+    let mut session_key = [0u8; HASH_LENGTH];
+    let mut master_key = [0u8; MASTER_KEY_LENGTH];
+    assert_eq!(
+        responder_finish(
+            &zero_ke3,
+            &mut server_state,
+            &mut session_key,
+            &mut master_key
+        ),
+        Err(OpaqueError::AuthenticationError)
+    );
+    assert_eq!(server_state.phase, ResponderPhase::Finished);
+    assert_eq!(
+        responder_finish(
+            &zero_ke3,
+            &mut server_state,
+            &mut session_key,
+            &mut master_key
+        ),
+        Err(OpaqueError::ValidationError)
+    );
 }
 
 #[test]
