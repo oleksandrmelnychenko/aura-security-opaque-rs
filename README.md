@@ -143,7 +143,8 @@ The canonical public C contract lives in `rust/include/`:
 - `opaque_relay.h`
 - `opaque_api.h`
 
-The Apple packaging path now stages those curated headers and `module.modulemap` directly into the XCFramework. The current Swift wrapper still uses a temporary ABI shim while the republished XCFramework/module path is rolled out, but the canonical ABI source is the curated header set above.
+The Apple packaging path stages those curated headers and `module.modulemap` directly into the XCFramework, and the Swift wrapper imports the packaged C module directly.
+Authentication now binds `account_id` into the KE1 transcript; Swift clients must supply it explicitly via `generateKE1(password:accountId:state:)`.
 
 | Platform | Package |
 |----------|---------|

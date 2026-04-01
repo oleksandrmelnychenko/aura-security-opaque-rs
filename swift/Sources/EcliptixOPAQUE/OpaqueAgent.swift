@@ -24,7 +24,7 @@ import Foundation
 ///
 /// // --- Authentication (each login) ---
 /// let loginState = try agent.createState()
-/// let ke1 = try agent.generateKE1(password: pwd, state: loginState)
+/// let ke1 = try agent.generateKE1(password: pwd, accountId: accountId, state: loginState)
 /// // send ke1 → server, receive ke2
 /// let ke3 = try agent.generateKE3(ke2: ke2, state: loginState)
 /// // send ke3 → server
@@ -92,18 +92,16 @@ public final class OpaqueAgent: @unchecked Sendable {
         }
 
         var rawHandle: OpaquePointer?
-        var err = COpaqueError()
         let result = relayPublicKey.withUnsafeBytes { keyPtr in
             opaque_agent_create(
                 keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
                 relayPublicKey.count,
-                &rawHandle,
-                &err
+                &rawHandle
             )
         }
 
         guard result.rawValue == 0, let h = rawHandle else {
-            throw OpaqueError.from(&err)
+            throw OpaqueError.fromCode(result)
         }
         self.handle = h
     }
@@ -135,7 +133,6 @@ public final class OpaqueAgent: @unchecked Sendable {
         guard let handle = handle else { throw OpaqueError.invalidState }
 
         var request = Data(count: Constants.registrationRequestLength)
-        var err = COpaqueError()
 
         let result = try state.withHandle { stateHandle in
             password.withUnsafeBytes { passwordPtr in
@@ -146,14 +143,13 @@ public final class OpaqueAgent: @unchecked Sendable {
                         password.count,
                         stateHandle,
                         requestPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        Constants.registrationRequestLength,
-                        &err
+                        Constants.registrationRequestLength
                     )
                 }
             }
         }
 
-        guard result.rawValue == 0 else { throw OpaqueError.from(&err) }
+        guard result.rawValue == 0 else { throw OpaqueError.fromCode(result) }
         return request
     }
 
@@ -171,7 +167,6 @@ public final class OpaqueAgent: @unchecked Sendable {
         guard let handle = handle else { throw OpaqueError.invalidState }
 
         var record = Data(count: Constants.registrationRecordLength)
-        var err = COpaqueError()
 
         let result = try state.withHandle { stateHandle in
             response.withUnsafeBytes { responsePtr in
@@ -182,48 +177,57 @@ public final class OpaqueAgent: @unchecked Sendable {
                         response.count,
                         stateHandle,
                         recordPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        Constants.registrationRecordLength,
-                        &err
+                        Constants.registrationRecordLength
                     )
                 }
             }
         }
 
-        guard result.rawValue == 0 else { throw OpaqueError.from(&err) }
+        guard result.rawValue == 0 else { throw OpaqueError.fromCode(result) }
         return record
     }
 
     // ── Authentication ────────────────────────────────────────────────────────
 
     /// **Authentication step 1/3.** Produces a 1273-byte KE1 message.
-    public func generateKE1(password: Data, state: AgentState) throws -> Data {
+    public func generateKE1(password: Data, accountId: Data, state: AgentState) throws -> Data {
         guard !password.isEmpty else {
             throw OpaqueError.invalidInput("Password cannot be empty")
+        }
+        guard !accountId.isEmpty else {
+            throw OpaqueError.invalidInput("Account identifier cannot be empty")
+        }
+        guard accountId.count <= Constants.maxAccountIdLength else {
+            throw OpaqueError.invalidInput(
+                "Account identifier must be at most \(Constants.maxAccountIdLength) bytes"
+            )
         }
         lock.lock()
         defer { lock.unlock() }
         guard let handle = handle else { throw OpaqueError.invalidState }
 
         var ke1 = Data(count: Constants.ke1Length)
-        var err = COpaqueError()
 
         let result = try state.withHandle { stateHandle in
             password.withUnsafeBytes { passwordPtr in
-                ke1.withUnsafeMutableBytes { ke1Ptr in
-                    opaque_agent_generate_ke1(
-                        handle,
-                        passwordPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        password.count,
-                        stateHandle,
-                        ke1Ptr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        Constants.ke1Length,
-                        &err
-                    )
+                accountId.withUnsafeBytes { accountIdPtr in
+                    ke1.withUnsafeMutableBytes { ke1Ptr in
+                        opaque_agent_generate_ke1(
+                            handle,
+                            passwordPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                            password.count,
+                            accountIdPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                            accountId.count,
+                            stateHandle,
+                            ke1Ptr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                            Constants.ke1Length
+                        )
+                    }
                 }
             }
         }
 
-        guard result.rawValue == 0 else { throw OpaqueError.from(&err) }
+        guard result.rawValue == 0 else { throw OpaqueError.fromCode(result) }
         return ke1
     }
 
@@ -239,7 +243,6 @@ public final class OpaqueAgent: @unchecked Sendable {
         guard let handle = handle else { throw OpaqueError.invalidState }
 
         var ke3 = Data(count: Constants.ke3Length)
-        var err = COpaqueError()
 
         let result = try state.withHandle { stateHandle in
             ke2.withUnsafeBytes { ke2Ptr in
@@ -250,14 +253,13 @@ public final class OpaqueAgent: @unchecked Sendable {
                         ke2.count,
                         stateHandle,
                         ke3Ptr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        Constants.ke3Length,
-                        &err
+                        Constants.ke3Length
                     )
                 }
             }
         }
 
-        guard result.rawValue == 0 else { throw OpaqueError.from(&err) }
+        guard result.rawValue == 0 else { throw OpaqueError.fromCode(result) }
         return ke3
     }
 
@@ -275,7 +277,6 @@ public final class OpaqueAgent: @unchecked Sendable {
             secureZeroData(&sessionKey)
             secureZeroData(&masterKey)
         }
-        var err = COpaqueError()
 
         let result = try state.withHandle { stateHandle in
             sessionKey.withUnsafeMutableBytes { sessionPtr in
@@ -286,14 +287,13 @@ public final class OpaqueAgent: @unchecked Sendable {
                         sessionPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
                         Constants.sessionKeyLength,
                         masterPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        Constants.masterKeyLength,
-                        &err
+                        Constants.masterKeyLength
                     )
                 }
             }
         }
 
-        guard result.rawValue == 0 else { throw OpaqueError.from(&err) }
+        guard result.rawValue == 0 else { throw OpaqueError.fromCode(result) }
         return AuthenticationKeys(sessionKey: sessionKey, masterKey: masterKey)
     }
 }
@@ -311,11 +311,10 @@ extension OpaqueAgent {
 
         internal init() throws {
             var rawHandle: OpaquePointer?
-            var err = COpaqueError()
-            let result = opaque_agent_state_create(&rawHandle, &err)
+            let result = opaque_agent_state_create(&rawHandle)
 
             guard result.rawValue == 0, let h = rawHandle else {
-                throw OpaqueError.from(&err)
+                throw OpaqueError.fromCode(result)
             }
             self.handle = h
         }
@@ -428,5 +427,6 @@ extension OpaqueAgent {
         public static let ke3Length                    = 65
         public static let kemPublicKeyLength           = 1184
         public static let kemCiphertextLength          = 1088
+        public static let maxAccountIdLength           = 1024
     }
 }

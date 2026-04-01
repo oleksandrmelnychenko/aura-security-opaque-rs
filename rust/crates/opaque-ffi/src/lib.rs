@@ -45,7 +45,11 @@
 mod agent_ffi;
 mod relay_ffi;
 
+use std::ffi::c_char;
+
 use opaque_core::types::{OpaqueError, OpaqueResult};
+
+static VERSION_STRING: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
 pub(crate) fn ffi_error_to_int(error: OpaqueError) -> i32 {
     match error {
@@ -59,5 +63,34 @@ pub(crate) fn result_to_int(r: OpaqueResult<()>) -> i32 {
     match r {
         Ok(()) => 0,
         Err(e) => ffi_error_to_int(e),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn opaque_version() -> *const c_char {
+    VERSION_STRING.as_ptr().cast()
+}
+
+#[no_mangle]
+pub extern "C" fn opaque_shutdown() {}
+
+#[no_mangle]
+pub extern "C" fn opaque_error_string(code: i32) -> *const c_char {
+    match code {
+        0 => c"success".as_ptr(),
+        -1 => c"invalid input parameter".as_ptr(),
+        -2 => c"cryptographic operation failed".as_ptr(),
+        -3 => c"protocol message has invalid format or length".as_ptr(),
+        -4 => c"validation failed".as_ptr(),
+        -5 => c"authentication or protocol validation failed".as_ptr(),
+        -6 => c"invalid public key".as_ptr(),
+        -7 => c"account already registered".as_ptr(),
+        -8 => c"malformed ML-KEM key or ciphertext".as_ptr(),
+        -9 => c"envelope has invalid format".as_ptr(),
+        -10 => c"unsupported protocol version".as_ptr(),
+        -99 => c"internal FFI panic".as_ptr(),
+        -100 => c"handle is busy".as_ptr(),
+        -101 => c"provided credentials record is malformed".as_ptr(),
+        _ => c"unknown error".as_ptr(),
     }
 }

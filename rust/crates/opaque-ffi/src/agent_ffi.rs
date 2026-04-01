@@ -118,6 +118,8 @@ const FFI_PANIC: i32 = -99;
 
 const FFI_BUSY: i32 = -100;
 
+const MAX_ACCOUNT_ID_LENGTH: usize = 1024;
+
 struct AgentHandle {
     initiator: OpaqueInitiator,
     in_use: AtomicBool,
@@ -576,6 +578,7 @@ pub unsafe extern "C" fn opaque_agent_generate_ke1(
             || secure_key.is_null()
             || account_id.is_null()
             || account_id_length == 0
+            || account_id_length > MAX_ACCOUNT_ID_LENGTH
             || ke1_out.is_null()
             || ke1_length < KE1_LENGTH
         {

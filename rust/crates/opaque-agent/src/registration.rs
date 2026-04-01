@@ -41,6 +41,7 @@ pub fn create_registration_request(
         &mut state.oblivious_prf_blind_scalar,
     )?;
 
+    state.refresh_deadline();
     state.phase = InitiatorPhase::RegistrationRequested;
     Ok(())
 }

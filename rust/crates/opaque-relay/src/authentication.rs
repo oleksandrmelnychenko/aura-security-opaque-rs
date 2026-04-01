@@ -213,11 +213,15 @@ pub fn generate_ke2(
 
     let mut resp_mac_key = [0u8; MAC_LENGTH];
     crypto::key_derivation_expand(&prk, pq_labels::PQ_RESPONDER_MAC_INFO, &mut resp_mac_key)?;
-    crypto::hmac_sha512(&resp_mac_key, &mac_input, &mut ke2.responder_mac)?;
+    crypto::hmac_sha512(&resp_mac_key, &mac_input[..off], &mut ke2.responder_mac)?;
 
     let mut init_mac_key = [0u8; MAC_LENGTH];
     crypto::key_derivation_expand(&prk, pq_labels::PQ_INITIATOR_MAC_INFO, &mut init_mac_key)?;
-    crypto::hmac_sha512(&init_mac_key, &mac_input, &mut state.expected_initiator_mac)?;
+    crypto::hmac_sha512(
+        &init_mac_key,
+        &mac_input[..off],
+        &mut state.expected_initiator_mac,
+    )?;
 
     classical_ikm.zeroize();
     mac_input.zeroize();
@@ -231,6 +235,7 @@ pub fn generate_ke2(
     init_mac_key.zeroize();
     transcript_hash.zeroize();
     account_context_hash.zeroize();
+    state.refresh_deadline();
     state.phase = ResponderPhase::Ke2Generated;
     Ok(())
 }
@@ -411,5 +416,114 @@ mod tests {
         assert!(is_all_zero(&state.pq_shared_secret));
         assert!(is_all_zero(&state.session_key));
         assert!(is_all_zero(&state.master_key));
+    }
+
+    #[test]
+    fn stale_created_responder_state_is_refreshed_by_ke2() {
+        let account_id = b"alice@example.com";
+        let password = b"correct horse battery staple";
+        let responder = OpaqueResponder::generate().unwrap();
+        let initiator = OpaqueInitiator::new(responder.public_key()).unwrap();
+
+        let mut registration_state = opaque_agent::InitiatorState::new();
+        let mut registration_request = RegistrationRequest::new();
+        create_registration_request(password, &mut registration_request, &mut registration_state)
+            .unwrap();
+
+        let mut registration_request_wire = vec![0u8; REGISTRATION_REQUEST_WIRE_LENGTH];
+        protocol::write_registration_request(
+            &registration_request.data,
+            &mut registration_request_wire,
+        )
+        .unwrap();
+
+        let mut registration_response = crate::RegistrationResponse::new();
+        crate::create_registration_response(
+            &responder,
+            &registration_request_wire,
+            account_id,
+            &mut registration_response,
+        )
+        .unwrap();
+
+        let mut registration_response_wire = vec![0u8; REGISTRATION_RESPONSE_WIRE_LENGTH];
+        protocol::write_registration_response(
+            &registration_response.data[..PUBLIC_KEY_LENGTH],
+            &registration_response.data[PUBLIC_KEY_LENGTH..],
+            &mut registration_response_wire,
+        )
+        .unwrap();
+
+        let mut record = RegistrationRecord::new();
+        finalize_registration(
+            &initiator,
+            &registration_response_wire,
+            &mut registration_state,
+            &mut record,
+        )
+        .unwrap();
+
+        let mut record_bytes = vec![0u8; REGISTRATION_RECORD_LENGTH];
+        protocol::write_registration_record(
+            &record.envelope,
+            &record.initiator_public_key,
+            &mut record_bytes,
+        )
+        .unwrap();
+
+        let mut credentials = ResponderCredentials::new();
+        crate::build_credentials(&record_bytes, &mut credentials).unwrap();
+
+        let mut client_state = opaque_agent::InitiatorState::new();
+        let mut ke1 = Ke1Message::new();
+        generate_ke1(password, account_id, &mut ke1, &mut client_state).unwrap();
+
+        let mut ke1_bytes = vec![0u8; KE1_LENGTH];
+        protocol::write_ke1(
+            &ke1.credential_request,
+            &ke1.initiator_public_key,
+            &ke1.initiator_nonce,
+            &ke1.pq_ephemeral_public_key,
+            &mut ke1_bytes,
+        )
+        .unwrap();
+
+        let mut state = ResponderState::new();
+        state.expire_for_test();
+
+        let mut ke2 = Ke2Message::new();
+        generate_ke2(
+            &responder,
+            &ke1_bytes,
+            account_id,
+            &credentials,
+            &mut ke2,
+            &mut state,
+        )
+        .unwrap();
+
+        let mut ke2_bytes = vec![0u8; opaque_core::types::KE2_LENGTH];
+        protocol::write_ke2(
+            &ke2.responder_nonce,
+            &ke2.responder_public_key,
+            &ke2.credential_response,
+            &ke2.responder_mac,
+            &ke2.kem_ciphertext,
+            &mut ke2_bytes,
+        )
+        .unwrap();
+
+        let mut ke3 = opaque_agent::Ke3Message::new();
+        opaque_agent::generate_ke3(&initiator, &ke2_bytes, &mut client_state, &mut ke3).unwrap();
+
+        let mut ke3_bytes = vec![0u8; KE3_LENGTH];
+        protocol::write_ke3(&ke3.initiator_mac, &mut ke3_bytes).unwrap();
+
+        let mut session_key = [0u8; HASH_LENGTH];
+        let mut master_key = [0u8; MASTER_KEY_LENGTH];
+        responder_finish(&ke3_bytes, &mut state, &mut session_key, &mut master_key).unwrap();
+
+        assert!(state.handshake_complete);
+        assert_eq!(state.phase, ResponderPhase::Finished);
     }
 }

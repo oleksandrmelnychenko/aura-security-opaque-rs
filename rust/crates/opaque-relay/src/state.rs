@@ -31,33 +31,67 @@ pub struct ResponderState {
     #[zeroize(skip)]
     created_at: Instant,
 
-    pub responder_private_key: [u8; PRIVATE_KEY_LENGTH],
+    pub(crate) responder_private_key: [u8; PRIVATE_KEY_LENGTH],
 
-    pub responder_public_key: [u8; PUBLIC_KEY_LENGTH],
+    pub(crate) responder_public_key: [u8; PUBLIC_KEY_LENGTH],
 
-    pub responder_ephemeral_private_key: [u8; PRIVATE_KEY_LENGTH],
+    pub(crate) responder_ephemeral_private_key: [u8; PRIVATE_KEY_LENGTH],
 
-    pub responder_ephemeral_public_key: [u8; PUBLIC_KEY_LENGTH],
+    pub(crate) responder_ephemeral_public_key: [u8; PUBLIC_KEY_LENGTH],
 
-    pub initiator_public_key: [u8; PUBLIC_KEY_LENGTH],
+    pub(crate) initiator_public_key: [u8; PUBLIC_KEY_LENGTH],
 
-    pub session_key: [u8; HASH_LENGTH],
+    pub(crate) session_key: [u8; HASH_LENGTH],
 
-    pub expected_initiator_mac: [u8; MAC_LENGTH],
+    pub(crate) expected_initiator_mac: [u8; MAC_LENGTH],
 
-    pub master_key: [u8; MASTER_KEY_LENGTH],
+    pub(crate) master_key: [u8; MASTER_KEY_LENGTH],
 
     #[zeroize(skip)]
     pub handshake_complete: bool,
 
-    pub pq_shared_secret: [u8; pq::KEM_SHARED_SECRET_LENGTH],
+    pub(crate) pq_shared_secret: [u8; pq::KEM_SHARED_SECRET_LENGTH],
 }
 
 impl ResponderState {
     pub fn is_expired(&self) -> bool {
+        if matches!(
+            self.phase,
+            ResponderPhase::Created | ResponderPhase::Finished
+        ) {
+            return false;
+        }
         Instant::now()
             .checked_duration_since(self.created_at)
             .is_none_or(|d| d.as_secs() >= STATE_MAX_LIFETIME_SECS)
+    }
+
+    pub(crate) fn refresh_deadline(&mut self) {
+        self.created_at = Instant::now();
+    }
+
+    pub fn responder_private_key(&self) -> &[u8; PRIVATE_KEY_LENGTH] {
+        &self.responder_private_key
+    }
+
+    pub fn session_key(&self) -> &[u8; HASH_LENGTH] {
+        &self.session_key
+    }
+
+    pub fn expected_initiator_mac(&self) -> &[u8; MAC_LENGTH] {
+        &self.expected_initiator_mac
+    }
+
+    pub fn responder_ephemeral_private_key(&self) -> &[u8; PRIVATE_KEY_LENGTH] {
+        &self.responder_ephemeral_private_key
+    }
+
+    pub fn responder_ephemeral_public_key(&self) -> &[u8; PUBLIC_KEY_LENGTH] {
+        &self.responder_ephemeral_public_key
+    }
+
+    pub fn pq_shared_secret(&self) -> &[u8; pq::KEM_SHARED_SECRET_LENGTH] {
+        &self.pq_shared_secret
     }
 
     pub fn invalidate(&mut self) {

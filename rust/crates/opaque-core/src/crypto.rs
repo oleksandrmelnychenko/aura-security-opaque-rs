@@ -426,7 +426,8 @@ pub fn scalar_invert(
     scalar: &[u8; PRIVATE_KEY_LENGTH],
     result: &mut [u8; PRIVATE_KEY_LENGTH],
 ) -> OpaqueResult<()> {
-    let mut s = Scalar::from_bytes_mod_order(*scalar);
+    let mut s: Scalar =
+        Option::from(Scalar::from_canonical_bytes(*scalar)).ok_or(OpaqueError::CryptoError)?;
     let mut inv = s.invert();
     s.zeroize();
 

@@ -68,8 +68,8 @@ fn opaque_responder_generate_produces_valid_responder() {
 #[test]
 fn responder_state_new_zeroed() {
     let state = ResponderState::new();
-    assert_eq!(state.responder_private_key, [0u8; PRIVATE_KEY_LENGTH]);
-    assert_eq!(state.session_key, [0u8; HASH_LENGTH]);
+    assert_eq!(*state.responder_private_key(), [0u8; PRIVATE_KEY_LENGTH]);
+    assert_eq!(*state.session_key(), [0u8; HASH_LENGTH]);
     assert!(!state.handshake_complete);
 }
 

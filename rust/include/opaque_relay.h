@@ -6,45 +6,41 @@ extern "C" {
 #endif
 
 /*
- * Relay (server-side) API — Ecliptix OPAQUE
+ * Relay (server-side) API.
  *
- * This API is intended for backend and service integrations. Handles are
- * caller-owned, must not be used concurrently, and must be destroyed with the
- * matching destroy function.
- *
- * SECURITY NOTES:
- *   - Persist the relay private key and OPRF seed securely.
- *   - Compromise of the OPRF seed collapses offline-guessing resistance for
- *     registration records protected by that seed.
- *   - When exposing failures to untrusted clients, map all negative return
- *     codes to one generic authentication failure.
+ * Handles are caller-owned. Destroy them with the matching destroy function.
+ * A single handle must not be used concurrently; concurrent calls return
+ * OPAQUE_ERROR_BUSY.
  */
 
-/* ── Relay keypair management ─────────────────────────────────────────────── */
+/* ── Relay keypair management ────────────────────────────────────────────── */
 
-OPAQUE_API int32_t opaque_relay_keypair_generate(
+OPAQUE_API OpaqueErrorCode opaque_relay_keypair_generate(
     OpaqueRelayKeypairHandle** out_handle);
 
 OPAQUE_API void opaque_relay_keypair_destroy(
     OpaqueRelayKeypairHandle** handle_ptr);
 
-OPAQUE_API int32_t opaque_relay_keypair_get_public_key(
+OPAQUE_API OpaqueErrorCode opaque_relay_keypair_try_destroy(
+    OpaqueRelayKeypairHandle** handle_ptr);
+
+OPAQUE_API OpaqueErrorCode opaque_relay_keypair_get_public_key(
     OpaqueRelayKeypairHandle* handle,
-    uint8_t*                 public_key,
-    size_t                   key_buffer_size);
+    uint8_t*                  public_key,
+    size_t                    key_buffer_size);
 
-OPAQUE_API int32_t opaque_relay_keypair_get_oprf_seed(
+OPAQUE_API OpaqueErrorCode opaque_relay_keypair_get_oprf_seed(
     OpaqueRelayKeypairHandle* handle,
-    uint8_t*                 oprf_seed,
-    size_t                   seed_buffer_size);
+    uint8_t*                  oprf_seed,
+    size_t                    seed_buffer_size);
 
-/* ── Relay lifecycle ──────────────────────────────────────────────────────── */
+/* ── Relay lifecycle ─────────────────────────────────────────────────────── */
 
-OPAQUE_API int32_t opaque_relay_create(
+OPAQUE_API OpaqueErrorCode opaque_relay_create(
     OpaqueRelayKeypairHandle* keypair_handle,
     OpaqueRelayHandle**       out_handle);
 
-OPAQUE_API int32_t opaque_relay_create_with_keys(
+OPAQUE_API OpaqueErrorCode opaque_relay_create_with_keys(
     const uint8_t*      private_key,
     size_t              private_key_len,
     const uint8_t*      public_key,
@@ -53,20 +49,29 @@ OPAQUE_API int32_t opaque_relay_create_with_keys(
     size_t              oprf_seed_len,
     OpaqueRelayHandle** out_handle);
 
-OPAQUE_API void opaque_relay_destroy(
+OPAQUE_API void opaque_relay_destroy(OpaqueRelayHandle** handle_ptr);
+
+OPAQUE_API OpaqueErrorCode opaque_relay_try_destroy(
     OpaqueRelayHandle** handle_ptr);
 
-/* ── Relay per-flow state ─────────────────────────────────────────────────── */
+/* ── Relay per-flow state ────────────────────────────────────────────────── */
 
-OPAQUE_API int32_t opaque_relay_state_create(
+OPAQUE_API OpaqueErrorCode opaque_relay_state_create(
     OpaqueRelayStateHandle** out_handle);
 
 OPAQUE_API void opaque_relay_state_destroy(
     OpaqueRelayStateHandle** handle_ptr);
 
-/* ── Registration ─────────────────────────────────────────────────────────── */
+OPAQUE_API OpaqueErrorCode opaque_relay_state_try_destroy(
+    OpaqueRelayStateHandle** handle_ptr);
 
-OPAQUE_API int32_t opaque_relay_create_registration_response(
+/* ── Registration ────────────────────────────────────────────────────────── */
+
+/*
+ * `account_id` is bound into per-account OPRF derivation. Valid lengths are
+ * 1..=1024 bytes.
+ */
+OPAQUE_API OpaqueErrorCode opaque_relay_create_registration_response(
     OpaqueRelayHandle* relay_handle,
     const uint8_t*     request_data,
     size_t             request_length,
@@ -75,15 +80,15 @@ OPAQUE_API int32_t opaque_relay_create_registration_response(
     uint8_t*           response_data,
     size_t             response_buffer_size);
 
-OPAQUE_API int32_t opaque_relay_build_credentials(
+OPAQUE_API OpaqueErrorCode opaque_relay_build_credentials(
     const uint8_t* registration_record,
     size_t         record_length,
     uint8_t*       credentials_out,
     size_t         credentials_out_length);
 
-/* ── Authentication ───────────────────────────────────────────────────────── */
+/* ── Authentication ──────────────────────────────────────────────────────── */
 
-OPAQUE_API int32_t opaque_relay_generate_ke2(
+OPAQUE_API OpaqueErrorCode opaque_relay_generate_ke2(
     OpaqueRelayHandle*      relay_handle,
     const uint8_t*          ke1_data,
     size_t                  ke1_length,
@@ -95,7 +100,7 @@ OPAQUE_API int32_t opaque_relay_generate_ke2(
     size_t                  ke2_buffer_size,
     OpaqueRelayStateHandle* state_handle);
 
-OPAQUE_API int32_t opaque_relay_finish(
+OPAQUE_API OpaqueErrorCode opaque_relay_finish(
     OpaqueRelayHandle*      relay_handle,
     const uint8_t*          ke3_data,
     size_t                  ke3_length,
@@ -105,7 +110,7 @@ OPAQUE_API int32_t opaque_relay_finish(
     uint8_t*                master_key_out,
     size_t                  master_key_buffer_size);
 
-/* ── Relay size queries ───────────────────────────────────────────────────── */
+/* ── Relay size queries ──────────────────────────────────────────────────── */
 
 OPAQUE_API size_t opaque_relay_get_ke1_length(void);
 OPAQUE_API size_t opaque_relay_get_ke2_length(void);

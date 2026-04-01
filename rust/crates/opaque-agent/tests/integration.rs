@@ -256,7 +256,10 @@ fn unknown_user_uses_fake_credentials_and_fails_client_side() {
     let result = generate_ke3(&initiator, &ke2_bytes, &mut client_state, &mut ke3);
     assert_eq!(result, Err(OpaqueError::AuthenticationError));
     assert_eq!(server_state.phase, ResponderPhase::Ke2Generated);
-    assert!(!server_state.expected_initiator_mac.iter().all(|&b| b == 0));
+    assert!(!server_state
+        .expected_initiator_mac()
+        .iter()
+        .all(|&b| b == 0));
 }
 
 #[test]

@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 20a705bab587b3c31beaf97a78f11737f3e050e799a9b5d070ae1d5510b00cd6 # shrinks to password = [128, 255, 168, 181, 66, 158, 243, 40, 37, 251, 95, 140, 34, 204, 68, 152, 164, 232, 223, 229, 44, 157, 58, 30, 34, 115, 178, 217, 29, 219, 78, 119, 164, 61, 50, 30, 248, 126, 1, 67, 174, 128, 167, 202, 124, 112, 1, 223, 60, 27, 129, 255, 220, 113, 108, 89, 39, 7, 216, 227, 220]
+cc a53517fddbb86fbe7cf6ba86579d4fe23395ccf0cd57e802e280fc9f678db56c # shrinks to password = [254, 197, 72, 106, 215, 184, 179, 111, 26, 80, 203, 61, 11, 116, 83, 79, 11, 21, 134, 166, 58, 74, 110, 231, 139, 23, 241, 88, 88, 105, 48, 165, 215, 112, 229, 13, 170, 112, 220, 55, 198, 47, 18, 181, 211, 203, 65, 156, 154, 144, 77, 66]

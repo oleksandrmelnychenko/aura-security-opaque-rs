@@ -36,42 +36,86 @@ pub struct InitiatorState {
     #[zeroize(skip)]
     created_at: Instant,
 
-    pub secure_key: [u8; MAX_SECURE_KEY_LENGTH],
+    pub(crate) secure_key: [u8; MAX_SECURE_KEY_LENGTH],
 
-    pub secure_key_len: usize,
+    pub(crate) secure_key_len: usize,
 
-    pub initiator_private_key: [u8; PRIVATE_KEY_LENGTH],
+    pub(crate) initiator_private_key: [u8; PRIVATE_KEY_LENGTH],
 
-    pub initiator_public_key: [u8; PUBLIC_KEY_LENGTH],
+    pub(crate) initiator_public_key: [u8; PUBLIC_KEY_LENGTH],
 
-    pub initiator_ephemeral_private_key: [u8; PRIVATE_KEY_LENGTH],
+    pub(crate) initiator_ephemeral_private_key: [u8; PRIVATE_KEY_LENGTH],
 
-    pub initiator_ephemeral_public_key: [u8; PUBLIC_KEY_LENGTH],
+    pub(crate) initiator_ephemeral_public_key: [u8; PUBLIC_KEY_LENGTH],
 
-    pub responder_public_key: [u8; PUBLIC_KEY_LENGTH],
+    pub(crate) responder_public_key: [u8; PUBLIC_KEY_LENGTH],
 
-    pub session_key: [u8; HASH_LENGTH],
+    pub(crate) session_key: [u8; HASH_LENGTH],
 
-    pub oblivious_prf_blind_scalar: [u8; PRIVATE_KEY_LENGTH],
+    pub(crate) oblivious_prf_blind_scalar: [u8; PRIVATE_KEY_LENGTH],
 
-    pub initiator_nonce: [u8; NONCE_LENGTH],
+    pub(crate) initiator_nonce: [u8; NONCE_LENGTH],
 
-    pub account_context_hash: [u8; HASH_LENGTH],
+    pub(crate) account_context_hash: [u8; HASH_LENGTH],
 
-    pub master_key: [u8; MASTER_KEY_LENGTH],
+    pub(crate) master_key: [u8; MASTER_KEY_LENGTH],
 
-    pub pq_ephemeral_public_key: [u8; pq::KEM_PUBLIC_KEY_LENGTH],
+    pub(crate) pq_ephemeral_public_key: [u8; pq::KEM_PUBLIC_KEY_LENGTH],
 
-    pub pq_ephemeral_secret_key: [u8; pq::KEM_SECRET_KEY_LENGTH],
+    pub(crate) pq_ephemeral_secret_key: [u8; pq::KEM_SECRET_KEY_LENGTH],
 
-    pub pq_shared_secret: [u8; pq::KEM_SHARED_SECRET_LENGTH],
+    pub(crate) pq_shared_secret: [u8; pq::KEM_SHARED_SECRET_LENGTH],
 }
 
 impl InitiatorState {
     pub fn is_expired(&self) -> bool {
+        if matches!(
+            self.phase,
+            InitiatorPhase::Created
+                | InitiatorPhase::RegistrationFinalized
+                | InitiatorPhase::Finished
+        ) {
+            return false;
+        }
         Instant::now()
             .checked_duration_since(self.created_at)
             .is_none_or(|d| d.as_secs() >= STATE_MAX_LIFETIME_SECS)
+    }
+
+    pub(crate) fn refresh_deadline(&mut self) {
+        self.created_at = Instant::now();
+    }
+
+    pub fn initiator_private_key(&self) -> &[u8; PRIVATE_KEY_LENGTH] {
+        &self.initiator_private_key
+    }
+
+    pub fn initiator_public_key(&self) -> &[u8; PUBLIC_KEY_LENGTH] {
+        &self.initiator_public_key
+    }
+
+    pub fn initiator_ephemeral_private_key(&self) -> &[u8; PRIVATE_KEY_LENGTH] {
+        &self.initiator_ephemeral_private_key
+    }
+
+    pub fn initiator_ephemeral_public_key(&self) -> &[u8; PUBLIC_KEY_LENGTH] {
+        &self.initiator_ephemeral_public_key
+    }
+
+    pub fn initiator_nonce(&self) -> &[u8; NONCE_LENGTH] {
+        &self.initiator_nonce
+    }
+
+    pub fn pq_ephemeral_public_key(&self) -> &[u8; pq::KEM_PUBLIC_KEY_LENGTH] {
+        &self.pq_ephemeral_public_key
+    }
+
+    pub fn pq_ephemeral_secret_key(&self) -> &[u8; pq::KEM_SECRET_KEY_LENGTH] {
+        &self.pq_ephemeral_secret_key
+    }
+
+    pub fn pq_shared_secret(&self) -> &[u8; pq::KEM_SHARED_SECRET_LENGTH] {
+        &self.pq_shared_secret
     }
 
     pub fn invalidate(&mut self) {

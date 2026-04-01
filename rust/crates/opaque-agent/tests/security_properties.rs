@@ -146,11 +146,11 @@ fn intercepted_authenticate(
     let mut ke1 = Ke1Message::new();
     generate_ke1(password, ACCOUNT_ID, &mut ke1, &mut client_state).unwrap();
 
-    let client_ephemeral_sk = client_state.initiator_ephemeral_private_key;
-    let client_ephemeral_pk = client_state.initiator_ephemeral_public_key;
-    let client_nonce = client_state.initiator_nonce;
-    let client_kem_pk = client_state.pq_ephemeral_public_key;
-    let client_kem_sk = client_state.pq_ephemeral_secret_key;
+    let client_ephemeral_sk = *client_state.initiator_ephemeral_private_key();
+    let client_ephemeral_pk = *client_state.initiator_ephemeral_public_key();
+    let client_nonce = *client_state.initiator_nonce();
+    let client_kem_pk = *client_state.pq_ephemeral_public_key();
+    let client_kem_sk = *client_state.pq_ephemeral_secret_key();
 
     let mut ke1_bytes = vec![0u8; KE1_LENGTH];
     protocol::write_ke1(
@@ -177,10 +177,10 @@ fn intercepted_authenticate(
     )
     .unwrap();
 
-    let server_ephemeral_sk = server_state.responder_ephemeral_private_key;
-    let server_ephemeral_pk = server_state.responder_ephemeral_public_key;
+    let server_ephemeral_sk = *server_state.responder_ephemeral_private_key();
+    let server_ephemeral_pk = *server_state.responder_ephemeral_public_key();
     let server_nonce = ke2.responder_nonce;
-    let server_kem_ss = server_state.pq_shared_secret;
+    let server_kem_ss = *server_state.pq_shared_secret();
     let credential_response = ke2.credential_response;
     let kem_ciphertext = ke2.kem_ciphertext;
 
@@ -198,9 +198,9 @@ fn intercepted_authenticate(
     let mut ke3 = Ke3Message::new();
     generate_ke3(&initiator, &ke2_bytes, &mut client_state, &mut ke3).unwrap();
 
-    let client_static_sk = client_state.initiator_private_key;
-    let client_static_pk = client_state.initiator_public_key;
-    let client_kem_ss = client_state.pq_shared_secret;
+    let client_static_sk = *client_state.initiator_private_key();
+    let client_static_pk = *client_state.initiator_public_key();
+    let client_kem_ss = *client_state.pq_shared_secret();
 
     let mut ke3_bytes = vec![0u8; KE3_LENGTH];
     protocol::write_ke3(&ke3.initiator_mac, &mut ke3_bytes).unwrap();

@@ -4,7 +4,6 @@
 #include <stdint.h>
 
 int main(void) {
-    OpaqueError err = { OPAQUE_SUCCESS, NULL };
     OpaqueAgentHandle *agent = NULL;
     OpaqueAgentStateHandle *state = NULL;
     uint8_t invalid_key[OPAQUE_PUBLIC_KEY_LENGTH] = {0};
@@ -22,12 +21,11 @@ int main(void) {
     }
 
     /* Expected failure: identity / zero public key is invalid. */
-    if (opaque_agent_create(invalid_key, sizeof(invalid_key), &agent, &err) == OPAQUE_SUCCESS) {
+    if (opaque_agent_create(invalid_key, sizeof(invalid_key), &agent) == OPAQUE_SUCCESS) {
         opaque_agent_destroy(&agent);
         return 4;
     }
 
-    opaque_error_free(&err);
     opaque_agent_state_destroy(&state);
     opaque_agent_destroy(&agent);
     opaque_shutdown();

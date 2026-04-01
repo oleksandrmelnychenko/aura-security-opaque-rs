@@ -4,6 +4,9 @@ C-compatible API for the server side of the Ecliptix Hybrid PQ-OPAQUE protocol.
 Use from Go (cgo), Node.js (N-API), Python (ctypes/cffi), C, or any language
 with C FFI support.
 
+All functions return integer error codes directly. Use `opaque_error_string()`
+for a stable human-readable description of a code.
+
 ## Wire Sizes
 
 | Constant | Bytes | Getter function |
@@ -332,7 +335,7 @@ element (32 bytes), and the server's static public key (32 bytes).
 | `relay_handle` | `const void *` | — | Relay handle |
 | `request_data` | `const uint8_t *` | 33 | Client's blinded registration request |
 | `request_length` | `size_t` | — | Must be exactly 33 |
-| `account_id` | `const uint8_t *` | >= 1 | Unique account identifier (e.g., email) |
+| `account_id` | `const uint8_t *` | 1-1024 | Unique account identifier (e.g., email) |
 | `account_id_length` | `size_t` | — | Length of account_id in bytes |
 | `response_data` | `uint8_t *` | >= 65 | Output buffer for registration response |
 | `response_buffer_size` | `size_t` | — | Must be >= 65 |
@@ -401,7 +404,7 @@ This step:
 | `relay_handle` | `const void *` | — | Relay handle |
 | `ke1_data` | `const uint8_t *` | 1273 | Client's KE1 message |
 | `ke1_length` | `size_t` | — | Must be exactly 1273 |
-| `account_id` | `const uint8_t *` | >= 1 | Account identifier for OPRF key derivation |
+| `account_id` | `const uint8_t *` | 1-1024 | Account identifier for OPRF key derivation |
 | `account_id_length` | `size_t` | — | Length of account_id |
 | `credentials_data` | `const uint8_t *` | 169 / 0 | Stored credentials, or `NULL` for unknown user |
 | `credentials_length` | `size_t` | — | Must be exactly 169, or 0 for unknown user |

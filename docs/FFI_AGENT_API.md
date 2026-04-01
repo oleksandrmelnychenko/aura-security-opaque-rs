@@ -3,6 +3,9 @@
 C-compatible API for the client side of the Ecliptix Hybrid PQ-OPAQUE protocol.
 Use from Swift, Kotlin, C, Go, or any language with C FFI support.
 
+All functions return integer error codes directly. Use `opaque_error_string()`
+for a stable human-readable description of a code.
+
 ## Wire Sizes
 
 | Constant | Bytes | Getter function |
@@ -281,7 +284,7 @@ The 1273-byte KE1 contains:
 | `agent_handle` | `void *` | — | Agent handle |
 | `secure_key` | `const uint8_t *` | 1–4096 | User's password (raw bytes) |
 | `secure_key_length` | `size_t` | — | Length of password |
-| `account_id` | `const uint8_t *` | >= 1 | Account identifier bound into transcript |
+| `account_id` | `const uint8_t *` | 1-1024 | Account identifier bound into transcript |
 | `account_id_length` | `size_t` | — | Length of account identifier |
 | `state_handle` | `void *` | — | Fresh state from `opaque_agent_state_create` |
 | `ke1_out` | `uint8_t *` | >= 1273 | Output buffer for KE1 |

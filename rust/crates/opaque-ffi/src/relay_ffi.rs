@@ -109,6 +109,8 @@ const FFI_PANIC: i32 = -99;
 const FFI_BUSY: i32 = -100;
 const FFI_CORRUPTED_RECORD: i32 = -101;
 
+const MAX_ACCOUNT_ID_LENGTH: usize = 1024;
+
 struct RelayHandle {
     responder: OpaqueResponder,
     in_use: AtomicBool,
@@ -544,6 +546,7 @@ pub unsafe extern "C" fn opaque_relay_create_registration_response(
             || request_length != REGISTRATION_REQUEST_WIRE_LENGTH
             || account_id.is_null()
             || account_id_length == 0
+            || account_id_length > MAX_ACCOUNT_ID_LENGTH
             || response_data.is_null()
             || response_buffer_size < REGISTRATION_RESPONSE_WIRE_LENGTH
         {
@@ -693,6 +696,7 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
             || ke1_length != KE1_LENGTH
             || account_id.is_null()
             || account_id_length == 0
+            || account_id_length > MAX_ACCOUNT_ID_LENGTH
             || ke2_data.is_null()
             || ke2_buffer_size < KE2_LENGTH
         {
@@ -931,8 +935,10 @@ pub unsafe extern "C" fn opaque_relay_create_with_keys(
             return OpaqueError::InvalidInput.to_c_int();
         };
         let Ok(responder) = OpaqueResponder::new(keypair, oprf_seed) else {
+            oprf_seed.zeroize();
             return OpaqueError::InvalidInput.to_c_int();
         };
+        oprf_seed.zeroize();
         let boxed = Box::new(RelayHandle {
             responder,
             in_use: AtomicBool::new(false),
@@ -989,6 +995,12 @@ pub extern "C" fn opaque_relay_get_registration_response_length() -> usize {
 #[no_mangle]
 pub extern "C" fn opaque_relay_get_kem_ciphertext_length() -> usize {
     pq::KEM_CIPHERTEXT_LENGTH
+}
+
+/// Returns `OPRF_SEED_LENGTH` (32). Required size for persisted relay OPRF seeds.
+#[no_mangle]
+pub extern "C" fn opaque_relay_get_oprf_seed_length() -> usize {
+    OPRF_SEED_LENGTH
 }
 
 #[cfg(test)]

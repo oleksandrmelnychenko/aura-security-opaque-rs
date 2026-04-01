@@ -40,21 +40,10 @@ public enum OpaqueError: Error, LocalizedError, Sendable {
         }
     }
 
-    /// Creates an `OpaqueError` from a C `OpaqueError` struct returned by the library.
-    ///
-    /// Reads `error.message` for a detailed description (if present), then frees the
-    /// library-allocated string via `opaque_error_free`.
-    internal static func from(_ error: inout COpaqueError) -> OpaqueError {
-        let detail: String
-        if let msg = error.message {
-            detail = String(cString: msg)
-            opaque_error_free(&error)
-        } else if let staticMsg = coOpaqueErrorStaticMessage(error.code) {
-            detail = String(cString: staticMsg)
-        } else {
-            detail = "code \(coOpaqueErrorCodeRawValue(error.code))"
-        }
-        return fromCode(coOpaqueErrorCodeRawValue(error.code), detail: detail)
+    internal static func fromCode(_ code: COpaqueErrorCode) -> OpaqueError {
+        let raw = coOpaqueErrorCodeRawValue(code)
+        let detail = coOpaqueErrorStaticMessage(code).map { String(cString: $0) } ?? "code \(raw)"
+        return fromCode(raw, detail: detail)
     }
 
     internal static func fromCode(_ code: Int32, detail: String = "") -> OpaqueError {
@@ -76,4 +65,3 @@ public enum OpaqueError: Error, LocalizedError, Sendable {
         }
     }
 }
-
