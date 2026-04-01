@@ -29,7 +29,7 @@ rand = "=0.8.5"
 rand_core = "=0.6.4"
 thiserror = "=2.0.18"
 
-criterion = { version = "=0.5.1", features = ["html_reports"] }
+criterion = { version = "=0.8.2", features = ["html_reports"] }
 proptest = "=1.10.0"
 
 opaque-core = { path = "crates/opaque-core" }
