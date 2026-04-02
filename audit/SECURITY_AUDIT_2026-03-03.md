@@ -32,7 +32,7 @@ Post-audit remediation is now in progress: the previously reported broken OPRF-s
 
 | ID | Status | Notes |
 |----|--------|-------|
-| H-01 | **Fixed** | `opaque_relay_keypair_get_oprf_seed` endpoint removed from FFI surface (no stale symbol in codebase). |
+| H-01 | **Fixed** | `opaque_relay_keypair_get_oprf_seed` endpoint removed from the curated public FFI surface. |
 | M-01 | **Fixed** | All reviewed `Scalar` temporaries in `opaque-core/src/crypto.rs` are explicitly zeroized after use. |
 | M-02 | **Fixed** | `ml-kem` built with `zeroize` feature, `dk_array` zeroized, `DK` lifetime narrowed and dropped immediately after decapsulation. |
 | M-03 | **Partially fixed** | Password/blind lifetime reduced and explicit zeroization added earlier; `secure_key` remains `Vec<u8>` in initiator state. |

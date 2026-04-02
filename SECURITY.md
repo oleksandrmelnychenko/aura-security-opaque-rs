@@ -4,14 +4,14 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| 2.0.x   | :white_check_mark: |
+| < 2.0   | :x:                |
 
 ## Reporting a Vulnerability
 
 **Do NOT report security vulnerabilities through public GitHub issues.**
 
-Report them via email to: **security@ecliptix.com**
+Report them via the private process described here at: **security@ecliptix.com**
 
 You should receive a response within 48 hours.
 
@@ -74,6 +74,6 @@ Symbolic models in `formal/` provide protocol evidence, but they are not an exac
 
 ## References
 
-- [OPAQUE Draft Specification](https://datatracker.ietf.org/doc/draft-irtf-cfrg-opaque/)
+- [OPAQUE RFC 9807](https://www.rfc-editor.org/info/rfc9807)
 - [curve25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek)
 - [ML-KEM (FIPS 203)](https://csrc.nist.gov/pubs/fips/203/final)

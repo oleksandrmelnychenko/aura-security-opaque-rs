@@ -4,7 +4,7 @@ Thank you for your interest in contributing to this project.
 
 ## Reporting Issues
 
-- **Security vulnerabilities**: Report via [GitHub Security Advisories](https://github.com/oleksandrmelnychenko/ecliptix-opaque-rs/security/advisories/new). Do NOT use public issues.
+- **Security vulnerabilities**: Follow the private reporting path in `SECURITY.md`. Do NOT use public issues.
 - **Bugs**: Open an issue using the bug report template.
 - **Features**: Open an issue using the feature request template.
 

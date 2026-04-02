@@ -1,5 +1,11 @@
 # Гібридний постквантовий протокол автентифікації на основі парольного ключового обміну OPAQUE з інтеграцією ML-KEM-768: розробка, формальна верифікація та реалізація
 
+> **Archival status.** This file is a historical markdown draft retained for
+> traceability and reviewer lineage only. The canonical and current scientific
+> source for this repository is `docs/main.tex`. Metrics, wording, and some
+> references below may reflect an earlier repository state and should not be
+> treated as the final competition-facing text.
+
 ---
 
 ## АНОТАЦІЯ

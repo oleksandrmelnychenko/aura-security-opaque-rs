@@ -35,7 +35,7 @@ All algorithms are selected from IETF/NIST standards:
 
 | Function | Algorithm | Standard |
 |----------|-----------|----------|
-| OPRF / DH | Ristretto255 (4DH) | draft-irtf-cfrg-opaque |
+| OPRF / DH | Ristretto255 (4DH) | RFC 9807 baseline OPAQUE + implementation-specific 4DH extension |
 | KEM | ML-KEM-768 | FIPS 203 |
 | Key Stretching | Argon2id | RFC 9106 |
 | MAC | HMAC-SHA512 | RFC 2104 |

@@ -187,9 +187,13 @@ pub enum OpaqueError {
 impl OpaqueError {
     /// FFI-safe return code mapping.
     ///
-    /// SECURITY: protocol/authentication-stage failures are intentionally collapsed
-    /// into a single `-5` code to reduce account-enumeration and stage-fingerprinting
-    /// signals for remote callers.
+    /// SECURITY: most protocol/authentication-stage failures are intentionally
+    /// collapsed into a single `-5` code to reduce account-enumeration and
+    /// stage-fingerprinting signals for remote callers.
+    ///
+    /// `UnsupportedVersion` is kept distinct because the wire version byte is
+    /// an explicit public contract and does not reveal account- or
+    /// credential-dependent state.
     pub fn to_c_int(self) -> i32 {
         match self {
             OpaqueError::InvalidInput => -1,
@@ -201,7 +205,7 @@ impl OpaqueError {
             OpaqueError::AlreadyRegistered => -7,
             OpaqueError::InvalidKemInput => -5,
             OpaqueError::InvalidEnvelope => -5,
-            OpaqueError::UnsupportedVersion => -5,
+            OpaqueError::UnsupportedVersion => -10,
         }
     }
 }

@@ -1,5 +1,11 @@
 # OPAQUE Protocol Security Audit
 
+> **Historical status.** This report preserves an earlier audit snapshot for
+> traceability. It is not the canonical statement of the current repository
+> security posture. For the current branch, read
+> `audit/SECURITY_AUDIT_2026-03-03.md`, `SECURITY.md`, and the curated public
+> headers in `rust/include/`.
+
 ## Protocol Configuration
 - OPAQUE variant: custom hybrid construction (not RFC 9497 OPAQUE-3DH), using 4 DH terms + ML-KEM-768 combiner
 - OPRF suite: custom Ristretto255 OPRF (`hash_to_group` + scalar multiplication)

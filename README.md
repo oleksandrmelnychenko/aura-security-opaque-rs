@@ -1,10 +1,51 @@
-# Ecliptix OPAQUE
+# Ecliptix Hybrid PQ-OPAQUE
 
 [![CI](https://github.com/oleksandrmelnychenko/ecliptix-opaque-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/oleksandrmelnychenko/ecliptix-opaque-rs/actions/workflows/ci.yml)
 [![Benchmarks](https://github.com/oleksandrmelnychenko/ecliptix-opaque-rs/actions/workflows/benchmarks.yml/badge.svg)](https://github.com/oleksandrmelnychenko/ecliptix-opaque-rs/actions/workflows/benchmarks.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Hybrid post-quantum **OPAQUE** implementation in Rust combining **4DH Ristretto255** with **ML-KEM-768** for password-authenticated key exchange.
+Hybrid post-quantum **OPAQUE** implementation in Rust combining
+**4DH Ristretto255** with **ML-KEM-768** for password-authenticated key
+exchange.
+
+This repository is not just a prototype. It packages:
+
+- a multi-crate Rust implementation of the protocol;
+- formal models in Tamarin and ProVerif;
+- deterministic, integration, regression, and property-based tests;
+- Criterion benchmarks for primitive, protocol, and relay throughput layers;
+- paper-ready documentation of the wire format, threat boundary, and artifact story.
+
+Canonical scientific source: `docs/main.tex`.
+Historical drafts and audit snapshots are kept for traceability, but should
+not be cited as the current source of truth unless explicitly marked otherwise.
+
+## Why This Work Stands Out
+
+Hybrid PQ-OPAQUE is designed as a reproducible, artifact-backed
+post-quantum augmented PAKE rather than as a paper-only construction.
+The repository ties together the protocol narrative, code, test
+evidence, and symbolic models in one place.
+
+| Dimension | Current evidence |
+|----------|------------------|
+| Implementation | 4 Rust crates, 5335 LOC production code |
+| Tests | 3961 LOC tests, `155 passed; 1 ignored` in workspace |
+| Formal models | 1806 LOC across Tamarin + ProVerif artifacts |
+| Benchmarks | Criterion suites for micro, protocol, and throughput layers |
+| Wire protocol | Versioned wire messages: KE1 `1273`, KE2 `1377`, KE3 `65` bytes |
+| Security boundary | Offline dictionary resistance scoped to DB compromise **without** `oprf_seed` compromise |
+
+## Reviewer Quick Start
+
+If you are evaluating the work as a paper artifact or competition
+submission, start here:
+
+1. Read the paper source in `docs/main.tex`.
+2. Read `docs/ARTIFACT_GUIDE.md` for a claim-to-evidence map.
+3. Run `cargo test --workspace` in `rust/`.
+4. Inspect `formal/logs/` and `formal/README.md` for the symbolic boundary.
+5. Read `docs/WIRE_PROTOCOL_VERSIONING.md` for the exact wire-level story.
 
 ## Security Posture
 
@@ -12,7 +53,7 @@ This repository ships:
 
 - Production Rust implementations of the agent, relay, and FFI layers.
 - Regression tests for known security classes, including identity-point rejection, terminal-state reuse rejection, and the `oprf_seed` compromise boundary.
-- Symbolic models in `formal/` that support the protocol narrative, but do **not** constitute an exact proof of the shipping implementation.
+- Symbolic models in `formal/` that support the protocol narrative, but do **not** constitute an exact proof of the shipped code implementation.
 
 Security claims are intentionally scoped to the implemented trust boundary:
 
@@ -23,6 +64,20 @@ Security claims are intentionally scoped to the implemented trust boundary:
 | Hybrid combiner / PQ contribution | Supported by Rust tests + surrogate symbolic models | Depends on the implemented 4DH + ML-KEM transcript combiner |
 | Mutual authentication | Supported by symbolic models + Rust tests | Assumes correct relay public key pinning and trusted transport |
 | Offline dictionary resistance | **Scoped** | Holds for DB compromise **without** `oprf_seed` compromise |
+
+## Artifact Map
+
+| Need | Where to look |
+|------|---------------|
+| Paper / scientific narrative | `docs/main.tex` |
+| Historical markdown draft | `docs/SCIENTIFIC_PAPER_REVISED.md` (archival, non-canonical) |
+| Presentation / defense flow | `docs/PRESENTATION_OUTLINE.md` |
+| Wire format and versioning | `docs/WIRE_PROTOCOL_VERSIONING.md` |
+| Production assumptions | `docs/PRODUCTION_READINESS.md` |
+| Formal model overview | `formal/README.md` |
+| Formal proof logs | `formal/logs/` |
+| Rust implementation | `rust/crates/` |
+| FFI API documentation | `docs/FFI_AGENT_API.md`, `docs/FFI_RELAY_API.md` |
 
 ## Attack Coverage
 
@@ -71,6 +126,29 @@ rust/crates/
   opaque-relay/    Relay (responder) — registration & authentication
   opaque-ffi/      C FFI bindings (cdylib + staticlib)
 ```
+
+## Reproducibility
+
+The fastest way to reproduce the core claims is:
+
+```bash
+cd rust
+cargo test --workspace
+cargo bench --workspace
+```
+
+For symbolic evidence, inspect the archived reports first and rerun the
+tools only if you need to audit the model directly:
+
+```bash
+cd formal
+proverif hybrid_pq_opaque.pv
+proverif hybrid_pq_opaque_auth.pv
+./run-tamarin.sh
+```
+
+The precise artifact-to-claim mapping is documented in
+`docs/ARTIFACT_GUIDE.md`.
 
 ## Build
 
@@ -152,7 +230,9 @@ Authentication now binds `account_id` into the KE1 transcript; Swift clients mus
 
 ## Formal Verification
 
-Models and proof logs live in `formal/`, but they should be read as **protocol evidence**, not as a line-by-line proof of the shipped Rust implementation:
+Models and proof logs live in `formal/`, but they should be read as
+**protocol evidence**, not as a line-by-line proof of the shipped Rust
+implementation:
 
 - `hybrid_pq_opaque.spthy` and `hybrid_pq_opaque_verified.spthy` model surrogate/abstract DH behaviour.
 - `hybrid_pq_opaque.pv` and `hybrid_pq_opaque_auth.pv` split secrecy and authentication into separate ProVerif models.

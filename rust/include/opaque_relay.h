@@ -29,11 +29,6 @@ OPAQUE_API OpaqueErrorCode opaque_relay_keypair_get_public_key(
     uint8_t*                  public_key,
     size_t                    key_buffer_size);
 
-OPAQUE_API OpaqueErrorCode opaque_relay_keypair_get_oprf_seed(
-    OpaqueRelayKeypairHandle* handle,
-    uint8_t*                  oprf_seed,
-    size_t                    seed_buffer_size);
-
 /* ── Relay lifecycle ─────────────────────────────────────────────────────── */
 
 OPAQUE_API OpaqueErrorCode opaque_relay_create(
