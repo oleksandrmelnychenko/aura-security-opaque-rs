@@ -2,7 +2,7 @@
 
 ## Overview
 
-Every wire message in the Ecliptix OPAQUE protocol begins with a **1-byte version prefix**.
+Every wire message in the Aura OPAQUE protocol begins with a **1-byte version prefix**.
 The current (and only) version is `0x01`. Both client and server reject messages with
 an unknown version byte, returning error code `-10` (`UnsupportedVersion`).
 

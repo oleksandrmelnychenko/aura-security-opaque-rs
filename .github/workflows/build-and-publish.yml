@@ -165,12 +165,12 @@ jobs:
             -library rust/target/aarch64-apple-darwin/release/libopaque_ffi.a -headers rust/target/include \
             -library rust/target/aarch64-apple-ios/release/libopaque_ffi.a -headers rust/target/include \
             -library rust/target/libopaque_ffi_sim.a -headers rust/target/include \
-            -output dist/apple/EcliptixOPAQUE.xcframework
-          test -f dist/apple/EcliptixOPAQUE.xcframework/macos-arm64/Headers/opaque_api.h
-          test -f dist/apple/EcliptixOPAQUE.xcframework/macos-arm64/Headers/opaque_relay.h
-          test -f dist/apple/EcliptixOPAQUE.xcframework/macos-arm64/Headers/module.modulemap
-          cd dist/apple && zip -r EcliptixOPAQUE.xcframework.zip EcliptixOPAQUE.xcframework
-          swift package compute-checksum EcliptixOPAQUE.xcframework.zip > EcliptixOPAQUE.xcframework.zip.checksum
+            -output dist/apple/AuraOPAQUE.xcframework
+          test -f dist/apple/AuraOPAQUE.xcframework/macos-arm64/Headers/opaque_api.h
+          test -f dist/apple/AuraOPAQUE.xcframework/macos-arm64/Headers/opaque_relay.h
+          test -f dist/apple/AuraOPAQUE.xcframework/macos-arm64/Headers/module.modulemap
+          cd dist/apple && zip -r AuraOPAQUE.xcframework.zip AuraOPAQUE.xcframework
+          swift package compute-checksum AuraOPAQUE.xcframework.zip > AuraOPAQUE.xcframework.zip.checksum
 
       - uses: actions/upload-artifact@v4
         with:
@@ -181,7 +181,7 @@ jobs:
       - name: Attest Apple XCFramework
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: dist/apple/EcliptixOPAQUE.xcframework.zip
+          subject-path: dist/apple/AuraOPAQUE.xcframework.zip
 
   publish-release:
     name: GitHub Release
@@ -204,22 +204,22 @@ jobs:
 
       - name: Read checksum
         id: checksum
-        run: echo "value=$(cat artifacts/apple-xcframework/EcliptixOPAQUE.xcframework.zip.checksum | tr -d '[:space:]')" >> $GITHUB_OUTPUT
+        run: echo "value=$(cat artifacts/apple-xcframework/AuraOPAQUE.xcframework.zip.checksum | tr -d '[:space:]')" >> $GITHUB_OUTPUT
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/apple-xcframework/EcliptixOPAQUE.xcframework.zip
-            artifacts/apple-xcframework/EcliptixOPAQUE.xcframework.zip.checksum
+            artifacts/apple-xcframework/AuraOPAQUE.xcframework.zip
+            artifacts/apple-xcframework/AuraOPAQUE.xcframework.zip.checksum
           body: |
-            ## Ecliptix OPAQUE v${{ steps.version.outputs.VERSION }}
+            ## Aura OPAQUE v${{ steps.version.outputs.VERSION }}
 
             ### Swift Package Manager
             ```swift
             .binaryTarget(
-                name: "EcliptixOPAQUEBinary",
-                url: "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/EcliptixOPAQUE.xcframework.zip",
+                name: "AuraOPAQUEBinary",
+                url: "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/AuraOPAQUE.xcframework.zip",
                 checksum: "${{ steps.checksum.outputs.value }}"
             )
             ```

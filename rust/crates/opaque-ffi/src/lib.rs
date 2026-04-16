@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Oleksandr Melnychenko. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-//! # Ecliptix OPAQUE FFI
+//! # Aura OPAQUE FFI
 //!
-//! C-compatible Foreign Function Interface for the Ecliptix hybrid post-quantum OPAQUE protocol.
+//! C-compatible Foreign Function Interface for the Aura hybrid post-quantum OPAQUE protocol.
 //! This crate exposes the agent (client) and relay (server) APIs as `extern "C"` functions
 //! suitable for consumption from Swift, Kotlin, C, or any language with C FFI support.
 //!

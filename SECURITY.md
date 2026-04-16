@@ -11,7 +11,7 @@
 
 **Do NOT report security vulnerabilities through public GitHub issues.**
 
-Report them via the private process described here at: **security@ecliptix.com**
+Report them via the private process described here at: **security@aura.com**
 
 You should receive a response within 48 hours.
 

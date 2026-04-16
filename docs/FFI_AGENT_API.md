@@ -1,6 +1,6 @@
 # Agent (Client) FFI API Reference
 
-C-compatible API for the client side of the Ecliptix Hybrid PQ-OPAQUE protocol.
+C-compatible API for the client side of the Aura Hybrid PQ-OPAQUE protocol.
 Use from Swift, Kotlin, C, Go, or any language with C FFI support.
 
 All functions return integer error codes directly. Use `opaque_error_string()`

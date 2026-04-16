@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security Vulnerability
-    url: https://github.com/oleksandrmelnychenko/ecliptix-opaque-rs/security/advisories/new
+    url: https://github.com/oleksandrmelnychenko/aura-security-opaque-rs/security/advisories/new
     about: "Report security vulnerabilities privately through GitHub Security Advisories. DO NOT use public issues for security reports."
   - name: Documentation
-    url: https://github.com/oleksandrmelnychenko/ecliptix-opaque-rs/tree/main/docs
+    url: https://github.com/oleksandrmelnychenko/aura-security-opaque-rs/tree/main/docs
     about: "Check documentation before opening an issue"
   - name: Discussions
-    url: https://github.com/oleksandrmelnychenko/ecliptix-opaque-rs/discussions
+    url: https://github.com/oleksandrmelnychenko/aura-security-opaque-rs/discussions
     about: "For questions and general discussion"

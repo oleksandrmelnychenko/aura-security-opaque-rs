@@ -7,7 +7,7 @@
 
 ## 1. Purpose
 
-This policy establishes the information security framework for the Ecliptix OPAQUE cryptographic library. It defines controls to protect the confidentiality, integrity, and availability of the library and systems that depend on it.
+This policy establishes the information security framework for the Aura OPAQUE cryptographic library. It defines controls to protect the confidentiality, integrity, and availability of the library and systems that depend on it.
 
 ## 2. Scope
 
@@ -25,7 +25,7 @@ This policy applies to:
 | Project Maintainer | Enforce policy, triage vulnerabilities, approve releases |
 | Contributor | Follow secure coding guidelines, sign commits |
 | Integrator | Deploy per production guidelines, manage key storage |
-| Security Contact | Receive and respond to vulnerability reports (security@ecliptix.com) |
+| Security Contact | Receive and respond to vulnerability reports (security@aura.com) |
 
 ## 4. Cryptographic Controls
 
@@ -84,7 +84,7 @@ Release profile settings:
 
 ## 6. Vulnerability Management
 
-- Vulnerabilities are reported via security@ecliptix.com (see `SECURITY.md`).
+- Vulnerabilities are reported via security@aura.com (see `SECURITY.md`).
 - Initial response within 48 hours; confirmation within 7 days.
 - Critical vulnerabilities are patched and released within 72 hours of confirmation.
 - Security advisories are published with each fix release.

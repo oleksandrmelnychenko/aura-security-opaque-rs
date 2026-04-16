@@ -7,7 +7,7 @@
 
 ## 1. System Overview
 
-Ecliptix OPAQUE is a hybrid post-quantum password-authenticated key exchange (PAKE) library combining 4DH Ristretto255 with ML-KEM-768. The system has two roles:
+Aura OPAQUE is a hybrid post-quantum password-authenticated key exchange (PAKE) library combining 4DH Ristretto255 with ML-KEM-768. The system has two roles:
 
 - **Agent (Initiator)**: The client that holds the user's password.
 - **Relay (Responder)**: The server that holds registration records and a long-term keypair.

@@ -1,6 +1,6 @@
-File "/Users/oleksandrmelnychenko/Documents/Ecliptix.Security.OPAQUE/formal/hybrid_pq_opaque.pv", line 181, characters 31-36:
+File "/Users/oleksandrmelnychenko/Documents/Aura.Security.OPAQUE/formal/hybrid_pq_opaque.pv", line 181, characters 31-36:
 Warning: identifier kem_ct rebound.
-File "/Users/oleksandrmelnychenko/Documents/Ecliptix.Security.OPAQUE/formal/hybrid_pq_opaque.pv", line 243, characters 7-12:
+File "/Users/oleksandrmelnychenko/Documents/Aura.Security.OPAQUE/formal/hybrid_pq_opaque.pv", line 243, characters 7-12:
 Warning: identifier kem_ct rebound.
 Linear part:
 ec_dh(a,ec_pk(b)) = ec_dh(b,ec_pk(a))

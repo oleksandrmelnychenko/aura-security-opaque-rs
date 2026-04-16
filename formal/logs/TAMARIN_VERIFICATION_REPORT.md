@@ -313,5 +313,5 @@ MSYS_NO_PATHCONV=1 docker run --rm \
 ---
 
 *Report generated: 2026-02-22*
-*Ecliptix Security — Hybrid PQ-OPAQUE Protocol*
+*Aura Security — Hybrid PQ-OPAQUE Protocol*
 *Tamarin Prover 1.10.0 — 8/8 lemmas verified in 22.83s*

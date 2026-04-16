@@ -1,4 +1,4 @@
-# Contributing to Ecliptix OPAQUE
+# Contributing to Aura OPAQUE
 
 Thank you for your interest in contributing to this project.
 

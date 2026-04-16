@@ -1,6 +1,6 @@
 # Relay (Server) FFI API Reference
 
-C-compatible API for the server side of the Ecliptix Hybrid PQ-OPAQUE protocol.
+C-compatible API for the server side of the Aura Hybrid PQ-OPAQUE protocol.
 Use from Go (cgo), Node.js (N-API), Python (ctypes/cffi), C, or any language
 with C FFI support.
 

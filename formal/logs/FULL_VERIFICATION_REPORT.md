@@ -2,7 +2,7 @@
 
 **Protocol:** Hybrid PQ-OPAQUE (4DH Ristretto255 + ML-KEM-768)
 **Date:** 2026-02-22
-**Author:** Ecliptix Security
+**Author:** Aura Security
 
 ---
 
@@ -403,5 +403,5 @@ The abstract DH model correctly captures the essential security property: the ad
 ---
 
 *Report generated: 2026-02-22*
-*Ecliptix Security — Hybrid PQ-OPAQUE Protocol*
+*Aura Security — Hybrid PQ-OPAQUE Protocol*
 *All 7 security properties formally verified across 2 independent symbolic verifiers + 39 computational tests*

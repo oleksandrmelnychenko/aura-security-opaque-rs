@@ -15,8 +15,8 @@ cc "$ROOT/tests/c/ffi_smoke.c" \
   -I "$RUST_DIR/include" \
   -L "$RUST_DIR/target/debug" \
   -lopaque_ffi \
-  -o /tmp/ecliptix_opaque_ffi_smoke
-/tmp/ecliptix_opaque_ffi_smoke
+  -o /tmp/aura_opaque_ffi_smoke
+/tmp/aura_opaque_ffi_smoke
 
 swift build --package-path "$ROOT"
 

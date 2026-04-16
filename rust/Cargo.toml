@@ -14,7 +14,7 @@ license = "MIT"
 publish = false
 authors = ["Oleksandr Melnychenko <oleksandrmelnychenko@users.noreply.github.com>"]
 description = "Hybrid PQ-OPAQUE: Post-Quantum Password-Authenticated Key Exchange (4DH Ristretto255 + ML-KEM-768)"
-repository = "https://github.com/oleksandrmelnychenko/ecliptix-opaque-rs"
+repository = "https://github.com/oleksandrmelnychenko/aura-security-opaque-rs"
 
 [workspace.dependencies]
 ml-kem = { version = "=0.2.3", features = ["zeroize"] }

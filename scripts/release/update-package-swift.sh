@@ -22,8 +22,8 @@ checksum = sys.argv[3]
 text = package_path.read_text()
 
 text = re.sub(
-    r'https://github\.com/oleksandrmelnychenko/ecliptix-opaque-rs/releases/download/v[^"]+/EcliptixOPAQUE\.xcframework\.zip',
-    f'https://github.com/oleksandrmelnychenko/ecliptix-opaque-rs/releases/download/v{version}/EcliptixOPAQUE.xcframework.zip',
+    r'https://github\.com/oleksandrmelnychenko/aura-security-opaque-rs/releases/download/v[^"]+/AuraOPAQUE\.xcframework\.zip',
+    f'https://github.com/oleksandrmelnychenko/aura-security-opaque-rs/releases/download/v{version}/AuraOPAQUE.xcframework.zip',
     text,
 )
 text = re.sub(

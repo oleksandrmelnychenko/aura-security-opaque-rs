@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug in Ecliptix.Security.OPAQUE
+about: Report a bug in Aura.Security.OPAQUE
 title: '[BUG] '
 labels: bug
 assignees: ''

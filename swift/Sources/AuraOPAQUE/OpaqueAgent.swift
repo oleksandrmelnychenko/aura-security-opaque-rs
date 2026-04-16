@@ -1,6 +1,6 @@
 import Foundation
 
-/// Client-side handle for the Ecliptix Hybrid PQ-OPAQUE protocol.
+/// Client-side handle for the Aura Hybrid PQ-OPAQUE protocol.
 ///
 /// `OpaqueAgent` wraps the Rust FFI and provides a safe Swift interface for
 /// password registration and authentication using a hybrid post-quantum OPAQUE

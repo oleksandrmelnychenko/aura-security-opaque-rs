@@ -1,4 +1,4 @@
-# Ecliptix Hybrid PQ-OPAQUE — Security Audit Report
+# Aura Hybrid PQ-OPAQUE — Security Audit Report
 
 **Date:** 2026-03-03
 **Scope:** Full Rust workspace (`opaque-core`, `opaque-agent`, `opaque-relay`, `opaque-ffi`)
@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-The Ecliptix Hybrid PQ-OPAQUE implementation demonstrates **strong security engineering**. The protocol is correctly implemented with proper 4DH computation, sound hybrid PQ combiner (AND-model), complete transcript binding including ML-KEM material, and consistent use of constant-time operations. No CRITICAL or HIGH-severity vulnerabilities were found in the cryptographic protocol itself.  
+The Aura Hybrid PQ-OPAQUE implementation demonstrates **strong security engineering**. The protocol is correctly implemented with proper 4DH computation, sound hybrid PQ combiner (AND-model), complete transcript binding including ML-KEM material, and consistent use of constant-time operations. No CRITICAL or HIGH-severity vulnerabilities were found in the cryptographic protocol itself.  
 
 Post-audit remediation is now in progress: the previously reported broken OPRF-seed FFI endpoint was removed, deprecated AEAD dependency was migrated, and most scalar/KEM zeroization hardening was implemented. Remaining work is mostly defense-in-depth.
 

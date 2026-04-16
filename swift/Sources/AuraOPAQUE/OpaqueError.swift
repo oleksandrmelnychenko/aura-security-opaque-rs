@@ -1,6 +1,6 @@
 import Foundation
 
-/// Errors produced by the Ecliptix OPAQUE protocol.
+/// Errors produced by the Aura OPAQUE protocol.
 public enum OpaqueError: Error, LocalizedError, Sendable {
     /// ``OpaqueAgent/initialize()`` has not been called yet.
     case notInitialized

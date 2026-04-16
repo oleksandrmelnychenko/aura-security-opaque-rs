@@ -1,8 +1,8 @@
 import Foundation
 
-@_exported import EcliptixOPAQUEBinary
+@_exported import AuraOPAQUEBinary
 
-internal typealias COpaqueErrorCode = EcliptixOPAQUEBinary.OpaqueErrorCode
+internal typealias COpaqueErrorCode = AuraOPAQUEBinary.OpaqueErrorCode
 
 @inline(__always)
 internal func coOpaqueErrorCodeRawValue(_ code: COpaqueErrorCode) -> Int32 {
@@ -11,5 +11,5 @@ internal func coOpaqueErrorCodeRawValue(_ code: COpaqueErrorCode) -> Int32 {
 
 @inline(__always)
 internal func coOpaqueErrorStaticMessage(_ code: COpaqueErrorCode) -> UnsafePointer<CChar>? {
-    EcliptixOPAQUEBinary.opaque_error_string(code)
+    AuraOPAQUEBinary.opaque_error_string(code)
 }

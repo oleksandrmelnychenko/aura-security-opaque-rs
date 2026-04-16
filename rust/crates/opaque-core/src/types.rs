@@ -105,50 +105,50 @@ pub const SECRETBOX_MAC_LENGTH: usize = 16;
 
 pub mod labels {
 
-    pub const OPRF_CONTEXT: &[u8] = b"ECLIPTIX-OPAQUE-v1/OPRF";
+    pub const OPRF_CONTEXT: &[u8] = b"AURA-OPAQUE-v1/OPRF";
 
-    pub const OPRF_KEY_INFO: &[u8] = b"ECLIPTIX-OPAQUE-v1/OPRF-Key";
+    pub const OPRF_KEY_INFO: &[u8] = b"AURA-OPAQUE-v1/OPRF-Key";
 
-    pub const OPRF_SEED_INFO: &[u8] = b"ECLIPTIX-OPAQUE-v1/OPRF-Seed";
+    pub const OPRF_SEED_INFO: &[u8] = b"AURA-OPAQUE-v1/OPRF-Seed";
 
-    pub const ENVELOPE_CONTEXT: &[u8] = b"ECLIPTIX-OPAQUE-v1/EnvelopeKey";
+    pub const ENVELOPE_CONTEXT: &[u8] = b"AURA-OPAQUE-v1/EnvelopeKey";
 
-    pub const HKDF_SALT: &[u8] = b"ECLIPTIX-OPAQUE-v1/HKDF-Salt";
+    pub const HKDF_SALT: &[u8] = b"AURA-OPAQUE-v1/HKDF-Salt";
 
-    pub const TRANSCRIPT_CONTEXT: &[u8] = b"ECLIPTIX-OPAQUE-v1/Transcript";
+    pub const TRANSCRIPT_CONTEXT: &[u8] = b"AURA-OPAQUE-v1/Transcript";
 
-    pub const ACCOUNT_CONTEXT_BINDING: &[u8] = b"ECLIPTIX-OPAQUE-v2/AccountContext";
+    pub const ACCOUNT_CONTEXT_BINDING: &[u8] = b"AURA-OPAQUE-v2/AccountContext";
 
-    pub const KSF_CONTEXT: &[u8] = b"ECLIPTIX-OPAQUE-v1/KSF";
+    pub const KSF_CONTEXT: &[u8] = b"AURA-OPAQUE-v1/KSF";
 
-    pub const KSF_SALT_LABEL: &[u8] = b"ECLIPTIX-OPAQUE-v1/KSF-Salt";
+    pub const KSF_SALT_LABEL: &[u8] = b"AURA-OPAQUE-v1/KSF-Salt";
 
-    pub const SESSION_KEY_INFO: &[u8] = b"ECLIPTIX-OPAQUE-v1/SessionKey";
+    pub const SESSION_KEY_INFO: &[u8] = b"AURA-OPAQUE-v1/SessionKey";
 
-    pub const MASTER_KEY_INFO: &[u8] = b"ECLIPTIX-OPAQUE-v1/MasterKey";
+    pub const MASTER_KEY_INFO: &[u8] = b"AURA-OPAQUE-v1/MasterKey";
 
-    pub const RESPONDER_MAC_INFO: &[u8] = b"ECLIPTIX-OPAQUE-v1/ResponderMAC";
+    pub const RESPONDER_MAC_INFO: &[u8] = b"AURA-OPAQUE-v1/ResponderMAC";
 
-    pub const INITIATOR_MAC_INFO: &[u8] = b"ECLIPTIX-OPAQUE-v1/InitiatorMAC";
+    pub const INITIATOR_MAC_INFO: &[u8] = b"AURA-OPAQUE-v1/InitiatorMAC";
 
-    pub const DERIVE_KEYPAIR_CONTEXT: &[u8] = b"ECLIPTIX-OPAQUE-v1/DeriveKeyPair";
+    pub const DERIVE_KEYPAIR_CONTEXT: &[u8] = b"AURA-OPAQUE-v1/DeriveKeyPair";
 
-    pub const FAKE_CREDENTIALS_CONTEXT: &[u8] = b"ECLIPTIX-OPAQUE-v1/FakeCredentials";
+    pub const FAKE_CREDENTIALS_CONTEXT: &[u8] = b"AURA-OPAQUE-v1/FakeCredentials";
 }
 
 pub mod pq_labels {
 
-    pub const PQ_COMBINER_CONTEXT: &[u8] = b"ECLIPTIX-OPAQUE-PQ-v1/Combiner";
+    pub const PQ_COMBINER_CONTEXT: &[u8] = b"AURA-OPAQUE-PQ-v1/Combiner";
 
-    pub const PQ_KEM_CONTEXT: &[u8] = b"ECLIPTIX-OPAQUE-PQ-v1/KEM";
+    pub const PQ_KEM_CONTEXT: &[u8] = b"AURA-OPAQUE-PQ-v1/KEM";
 
-    pub const PQ_SESSION_KEY_INFO: &[u8] = b"ECLIPTIX-OPAQUE-PQ-v1/SessionKey";
+    pub const PQ_SESSION_KEY_INFO: &[u8] = b"AURA-OPAQUE-PQ-v1/SessionKey";
 
-    pub const PQ_MASTER_KEY_INFO: &[u8] = b"ECLIPTIX-OPAQUE-PQ-v1/MasterKey";
+    pub const PQ_MASTER_KEY_INFO: &[u8] = b"AURA-OPAQUE-PQ-v1/MasterKey";
 
-    pub const PQ_RESPONDER_MAC_INFO: &[u8] = b"ECLIPTIX-OPAQUE-PQ-v1/ResponderMAC";
+    pub const PQ_RESPONDER_MAC_INFO: &[u8] = b"AURA-OPAQUE-PQ-v1/ResponderMAC";
 
-    pub const PQ_INITIATOR_MAC_INFO: &[u8] = b"ECLIPTIX-OPAQUE-PQ-v1/InitiatorMAC";
+    pub const PQ_INITIATOR_MAC_INFO: &[u8] = b"AURA-OPAQUE-PQ-v1/InitiatorMAC";
 }
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]

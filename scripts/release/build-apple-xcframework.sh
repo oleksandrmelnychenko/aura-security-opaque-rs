@@ -23,23 +23,23 @@ lipo -create \
   "$RUST_DIR/target/x86_64-apple-ios/release/libopaque_ffi.a" \
   -output "$RUST_DIR/target/libopaque_ffi_sim.a"
 
-rm -rf "$DIST_DIR/EcliptixOPAQUE.xcframework" "$DIST_DIR/EcliptixOPAQUE.xcframework.zip"
+rm -rf "$DIST_DIR/AuraOPAQUE.xcframework" "$DIST_DIR/AuraOPAQUE.xcframework.zip"
 
 xcodebuild -create-xcframework \
   -library "$RUST_DIR/target/aarch64-apple-darwin/release/libopaque_ffi.a" -headers "$INCLUDE_DIR" \
   -library "$RUST_DIR/target/aarch64-apple-ios/release/libopaque_ffi.a" -headers "$INCLUDE_DIR" \
   -library "$RUST_DIR/target/libopaque_ffi_sim.a" -headers "$INCLUDE_DIR" \
-  -output "$DIST_DIR/EcliptixOPAQUE.xcframework"
+  -output "$DIST_DIR/AuraOPAQUE.xcframework"
 
-test -f "$DIST_DIR/EcliptixOPAQUE.xcframework/macos-arm64/Headers/opaque_api.h"
-test -f "$DIST_DIR/EcliptixOPAQUE.xcframework/macos-arm64/Headers/opaque_relay.h"
-test -f "$DIST_DIR/EcliptixOPAQUE.xcframework/macos-arm64/Headers/module.modulemap"
+test -f "$DIST_DIR/AuraOPAQUE.xcframework/macos-arm64/Headers/opaque_api.h"
+test -f "$DIST_DIR/AuraOPAQUE.xcframework/macos-arm64/Headers/opaque_relay.h"
+test -f "$DIST_DIR/AuraOPAQUE.xcframework/macos-arm64/Headers/module.modulemap"
 
 (
   cd "$DIST_DIR"
-  zip -r EcliptixOPAQUE.xcframework.zip EcliptixOPAQUE.xcframework >/dev/null
-  swift package compute-checksum EcliptixOPAQUE.xcframework.zip > EcliptixOPAQUE.xcframework.zip.checksum
+  zip -r AuraOPAQUE.xcframework.zip AuraOPAQUE.xcframework >/dev/null
+  swift package compute-checksum AuraOPAQUE.xcframework.zip > AuraOPAQUE.xcframework.zip.checksum
 )
 
-echo "Built: $DIST_DIR/EcliptixOPAQUE.xcframework.zip"
-echo "Checksum: $(tr -d '[:space:]' < "$DIST_DIR/EcliptixOPAQUE.xcframework.zip.checksum")"
+echo "Built: $DIST_DIR/AuraOPAQUE.xcframework.zip"
+echo "Checksum: $(tr -d '[:space:]' < "$DIST_DIR/AuraOPAQUE.xcframework.zip.checksum")"

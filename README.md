@@ -1,7 +1,7 @@
-# Ecliptix Hybrid PQ-OPAQUE
+# Aura Hybrid PQ-OPAQUE
 
-[![CI](https://github.com/oleksandrmelnychenko/ecliptix-opaque-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/oleksandrmelnychenko/ecliptix-opaque-rs/actions/workflows/ci.yml)
-[![Benchmarks](https://github.com/oleksandrmelnychenko/ecliptix-opaque-rs/actions/workflows/benchmarks.yml/badge.svg)](https://github.com/oleksandrmelnychenko/ecliptix-opaque-rs/actions/workflows/benchmarks.yml)
+[![CI](https://github.com/oleksandrmelnychenko/aura-security-opaque-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/oleksandrmelnychenko/aura-security-opaque-rs/actions/workflows/ci.yml)
+[![Benchmarks](https://github.com/oleksandrmelnychenko/aura-security-opaque-rs/actions/workflows/benchmarks.yml/badge.svg)](https://github.com/oleksandrmelnychenko/aura-security-opaque-rs/actions/workflows/benchmarks.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Hybrid post-quantum **OPAQUE** implementation in Rust combining
@@ -226,7 +226,7 @@ Authentication now binds `account_id` into the KE1 transcript; Swift clients mus
 
 | Platform | Package |
 |----------|---------|
-| iOS/macOS | `EcliptixOPAQUE.xcframework` (Swift Package Manager) |
+| iOS/macOS | `AuraOPAQUE.xcframework` (Swift Package Manager) |
 
 ## Formal Verification
 

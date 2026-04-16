@@ -1,6 +1,6 @@
 {
   "protocol": "Hybrid-PQ-OPAQUE",
-  "version": "ECLIPTIX-OPAQUE-PQ-v1",
+  "version": "AURA-OPAQUE-PQ-v1",
   "kem": "ML-KEM-768",
   "dh_group": "Ristretto255",
   "hash": "SHA-512",

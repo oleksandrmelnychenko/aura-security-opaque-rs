@@ -20,14 +20,14 @@ Publish a verified Apple binary release that ships:
    - `opaque_relay.h`
    - `opaque_api.h`
    - `module.modulemap`
-4. Record the checksum from `dist/apple/EcliptixOPAQUE.xcframework.zip.checksum`
+4. Record the checksum from `dist/apple/AuraOPAQUE.xcframework.zip.checksum`
 
 ## Package Manifest Update
 
 After the checksum is known, update `Package.swift`:
 
 ```bash
-scripts/release/update-package-swift.sh 2.0.0 "$(tr -d '[:space:]' < dist/apple/EcliptixOPAQUE.xcframework.zip.checksum)"
+scripts/release/update-package-swift.sh 2.0.0 "$(tr -d '[:space:]' < dist/apple/AuraOPAQUE.xcframework.zip.checksum)"
 ```
 
 ## GitHub Release Procedure
@@ -35,8 +35,8 @@ scripts/release/update-package-swift.sh 2.0.0 "$(tr -d '[:space:]' < dist/apple/
 1. Create a new release tag, for example `v2.0.0`.
 2. Push the tag so `.github/workflows/build-and-publish.yml` runs.
 3. Verify the workflow uploaded:
-   - `EcliptixOPAQUE.xcframework.zip`
-   - `EcliptixOPAQUE.xcframework.zip.checksum`
+   - `AuraOPAQUE.xcframework.zip`
+   - `AuraOPAQUE.xcframework.zip.checksum`
    - build attestation
 4. Publish release notes that describe the exact C and Swift surface shipped by the artifact.
 5. Verify `Package.swift` points at the same release asset and checksum.
