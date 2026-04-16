@@ -1,0 +1,1697 @@
+% ============================================================
+%  Hybrid PQ-OPAQUE — Full Journal Paper
+%  Target template: Elsevier elsarticle (JISA-oriented draft)
+%  Compiler: pdfLaTeX
+% ============================================================
+\documentclass[preprint,12pt]{elsarticle}
+\biboptions{numbers,sort&compress}
+
+% ── Language & Encoding (pdfLaTeX) ───────────────────────────
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+\usepackage{silence}
+\WarningFilter{amsmath}{Unable to redefine math accent \vec}
+
+% ── Mathematics ──────────────────────────────────────────────
+\makeatletter
+\let\vec\@undefined
+\makeatother
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{mathtools}
+
+% ── Tables ───────────────────────────────────────────────────
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{makecell}
+\usepackage{lscape}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
+
+\usepackage{xcolor}
+\definecolor{eclblue}{RGB}{27,74,139}
+\definecolor{eclgold}{RGB}{217,136,29}
+\definecolor{eclgreen}{RGB}{49,125,92}
+\definecolor{eclred}{RGB}{171,67,53}
+
+% ── Layout & Typography ──────────────────────────────────────
+\emergencystretch=2em
+\hfuzz=20pt
+\hbadness=10000
+\vbadness=10000
+\raggedbottom
+\setlength{\textfloatsep}{10pt plus 2pt minus 4pt}
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{10pt plus 2pt minus 2pt}
+
+% ── Hyperlinks ───────────────────────────────────────────────
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=black,
+  urlcolor=blue,
+}
+\urlstyle{same}
+
+% ── Custom column types ──────────────────────────────────────
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\arraybackslash}p{#1}}
+\newcommand{\acct}{\mathsf{acct}}
+\newcommand{\sigoprf}{\sigma_{\mathrm{oprf}}}
+\newcommand{\Label}[1]{L_{\mathrm{#1}}}
+\newcommand{\KLabel}[1]{\Lambda_{\mathrm{#1}}}
+\newcommand{\codeid}[1]{\textsf{#1}}
+
+% ── Theorem environments ─────────────────────────────────────
+\newtheorem{definition}{Definition}[section]
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{claim}[theorem]{Claim}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{utheorem}{Theorem}
+\newenvironment{sketchproof}{\par\noindent\textit{Proof sketch.}\ }{\hfill$\square$\par}
+
+% ============================================================
+\begin{document}
+% ============================================================
+
+\begin{frontmatter}
+
+\title{Hybrid Post-Quantum Authentication from OPAQUE and ML-KEM-768: Construction, Formal Analysis, and a Reproducible Implementation}
+
+\author[aff1]{Oleksandr Melnychenko}
+
+\address[aff1]{Khmelnytskyi National University, Khmelnytskyi, Ukraine}
+
+\journal{Journal of Information Security and Applications}
+
+% ============================================================
+\begin{abstract}
+% ============================================================
+Password authentication remains the predominant authentication mechanism in contemporary information systems. Password-authenticated key exchange, including OPAQUE, still relies on classical hardness assumptions tied to Diffie--Hellman problems and elliptic-curve cryptography. Scalable quantum computation makes those assumptions strategically fragile, and the store-now-decrypt-later threat turns post-quantum migration into an immediate systems concern rather than a remote theoretical prospect.
+
+This paper presents Hybrid PQ-OPAQUE, a hybrid extension of OPAQUE in which ML-KEM-768 (FIPS~203) is incorporated into the authenticated 4DH exchange path. The session key is derived by HKDF-Extract from four Ristretto255 Diffie--Hellman values and the ML-KEM-768 shared secret under a transcript-dependent salt. Unlike high-level hybrid-PAKE sketches, the construction fixes the complete wire format, account-context binding through $\acct$, deterministic derivation of the OPRF key from the root secret $\sigoprf$, and transcript-level incorporation of the post-quantum components.
+
+We analyze the construction with ProVerif~2.05, a surrogate 4DH model in Tamarin~Prover~1.10.0, and a Rust implementation validated by deterministic, integration, and property-oriented tests. The formal results are interpreted within explicit boundaries: they do not constitute a machine-checked proof of the implementation, and the offline-resistance claim is limited to compromise of the server database without compromise of $\sigoprf$.
+
+On Apple~M1~Pro, end-to-end authentication takes 481.43~ms, a full ML-KEM-768 round costs 122.01~$\mu$s, and Argon2id remains the dominant latency component. The post-quantum layer adds 159.3~$\mu$s to the key-exchange path without the KSF and increases handshake size to 2715~bytes without changing the number of rounds. Relative to classical OPAQUE, the construction therefore introduces modest additional computation for honest parties while shifting most overhead to message expansion rather than processor time.
+\end{abstract}
+
+\begin{keyword}
+OPAQUE \sep PAKE \sep ML-KEM-768 \sep post-quantum cryptography \sep hybrid key exchange \sep Ristretto255 \sep HKDF \sep Tamarin \sep ProVerif \sep Rust
+\end{keyword}
+
+\end{frontmatter}
+
+% ============================================================
+\section{Introduction}
+% ============================================================
+
+\subsection{Motivation}
+
+Password authentication remains widely deployed in contemporary distributed systems. Survey evidence indicates that more than 80\% of authentication procedures in web applications and network services still rely on passwords~\cite{bonneau2012,florencio2007}. Password-authenticated key-exchange protocols (PAKEs) allow two parties sharing a low-entropy secret to establish a protected channel without revealing that secret to an adversary~\cite{bellare2000}. Among augmented PAKE constructions, OPAQUE~\cite{jarecki2018} is one of the most thoroughly analyzed schemes: under compromise of the authentication database alone, the server stores a cryptographic record rather than a password equivalent~\cite{ietf-opaque}. In deployed systems, however, this guarantee depends on a clear trust boundary, because compromise of the global secret from which OPRF keys are derived is distinct from compromise of a passive record store.
+
+This reliance on classical hardness assumptions is problematic in the presence of quantum adversaries. Shor's algorithm~\cite{shor1994} threatens cryptosystems based on the discrete logarithm problem, including elliptic-curve key exchange and PAKE constructions built on related assumptions~\cite{bernstein2017}. Earlier estimates suggested that breaking Ristretto255/Curve25519 would require a cryptographically relevant quantum computer with approximately 2{,}330 logical qubits~\cite{roetteler2017}. More recent estimates for 256-bit elliptic-curve cryptography over \codeid{secp256k1} indicate a sharper scenario: the 2026 Google Quantum AI whitepaper reports realizations of Shor's algorithm for ECDLP-256 requiring no more than 1200 logical qubits and 90 million Toffoli operations, or no more than 1450 logical qubits and 70 million Toffoli operations, respectively~\cite{babbush2026}. Although these figures are not direct estimates for Ristretto255, they reinforce the broader conclusion that 256-bit elliptic-curve systems may become vulnerable earlier than earlier generations of quantum-resource estimates suggested. This concern is amplified by the store-now-decrypt-later strategy~\cite{mosca2018}, in which an adversary archives encrypted traffic for future decryption. For systems protecting long-lived confidential data, that threat motivates migration decisions well before large-scale quantum computers are available.
+
+In August 2024, NIST published the first post-quantum cryptography standards, including FIPS~203 for ML-KEM~\cite{fips203} and FIPS~204 for ML-DSA~\cite{fips204}. Hybrid constructions that combine classical and post-quantum components are already being introduced in TLS~1.3~\cite{stebila2024}, Signal (PQXDH)~\cite{brendel2020}, and WireGuard~\cite{hulsing2021}. Password authentication has not yet reached the same degree of standardization. Classical OPAQUE in its current IETF specification~\cite{ietf-opaque} contains no mechanism aimed at quantum attacks, and other established PAKE protocols such as SRP and SPAKE2 share the same structural limitation. At the same time, recent work on post-quantum and hybrid PAKE has produced compact KEM-based constructions~\cite{arriaga2024}, UC/QROM-secure schemes~\cite{lyu2024uc}, and formal studies of hybrid composition~\cite{hesse2024,lyu2024hybrid}. Comparatively few studies, however, combine a concrete augmented-PAKE design with explicit message syntax, bounded security claims, reproducible measurements, and a released implementation.
+
+\subsection{Research Scope and Contributions}
+
+This paper studies a hybrid extension of OPAQUE that integrates ML-KEM-768 into the authenticated 4DH exchange while preserving fixed-round interaction. The proposed construction combines four Ristretto255 Diffie--Hellman values with an ML-KEM-768 shared secret, binds an explicit account context $\acct$ and wire-format versioning into the transcript, and evaluates the result using symbolic analysis and an executable Rust implementation. The contribution is therefore not a general theory of hybrid PAKE composition, but a concrete augmented-PAKE design with explicit syntax, implementation details, and carefully delimited claims.
+
+The analysis is organized around four questions: whether ML-KEM-768 can be incorporated without increasing the number of protocol messages; how the classical and post-quantum key materials should be combined to preserve transcript binding; what degree of formal and experimental evidence is sufficient for restrained implementation-level claims; and whether the additional post-quantum cost remains acceptable when Argon2id dominates latency. These questions are addressed by aligning the protocol description, symbolic models, tests, and benchmarks on a single implementation-oriented specification. Relative to classical OPAQUE, the resulting design leaves round complexity unchanged, adds moderate computational overhead outside the password-hardening step, and moves most of the new cost to message expansion in KE1 and KE2.
+
+\subsection{Research Contributions}
+
+\begin{enumerate}
+  \item \textbf{A concrete hybrid 4DH~+~ML-KEM-768 construction.} The
+        paper specifies a concrete Hybrid PQ-OPAQUE variant in which
+        ML-KEM-768 is an integral constituent of the key exchange
+        rather than an optional adjunct.
+  \item \textbf{A transcript-bound key-material combiner.} The pre-key
+        is formed as in Eq.~\eqref{eq:hybrid-prk}, with a
+        context-dependent salt containing a domain-separated hash of the
+        extended transcript~$\tau$.
+  \item \textbf{An implementation-level protocol specification.}
+        Beyond the post-quantum elements themselves, the transcript
+        includes an explicit account-context hash, while the wire
+        format fixes a one-byte version prefix and exact message sizes.
+  \item \textbf{Layered formal and implementation support.} Reduction sketches, two
+        ProVerif models, a Tamarin model with a surrogate 4DH
+        representation, and Rust tests are aligned to the same
+        construction and the same threat-model boundaries.
+  \item \textbf{An open implementation and research artifact package.}
+        The artifact package contains implementation code, tests, and
+        dedicated modules for micro-benchmarking, protocol-level
+        benchmarking, and throughput assessment.
+  \item \textbf{Reproduced empirical overheads.} The post-quantum layer
+        increases key-exchange CPU cost by 159.3~$\mu$s without the
+        KSF, while Argon2id remains the dominant contributor to
+        end-to-end latency.
+\end{enumerate}
+
+\subsection{Terminological Conventions}
+
+To avoid terminological drift, the remainder of the paper adheres to
+the vocabulary fixed in Table~\ref{tab:terminology}. Subsequent uses of
+these terms should be read in the precise senses stated there.
+
+\begin{table}[htbp]
+\caption{Terminological conventions adopted in this paper}
+\label{tab:terminology}
+\centering\small
+\begin{tabularx}{\textwidth}{@{}L{3.2cm}X@{}}
+\toprule
+Term & Fixed meaning \\
+\midrule
+Wire format & The complete byte-level representation of a message on the channel, including the version prefix and protocol service fields \\
+Payload & The message body excluding the version prefix and any external wrappers \\
+Augmented PAKE (aPAKE) & A class of password-authenticated key-exchange protocols in which the server stores a verifier rather than the password itself or its direct equivalent \\
+Key-derivation scheme & The sequence of extraction and expansion procedures that produces session and auxiliary keys \\
+Research artifact package & The aggregate of source code, formal models, tests, and benchmarks sufficient for independent reproduction of the reported results \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+In addition, the formal exposition uses $\acct$ for the account
+identifier and $\sigoprf$ for the root secret from which server-side
+OPRF keys are derived. Literal ASCII domain-separation strings are
+replaced below with the symbols $\Label{oprf}$, $\Label{seed}$,
+$\Label{key}$, $\Label{ksf}$, $\Label{salt}$, $\Label{ctx}$,
+$L_{\tau}$, and $\Label{comb}$; for the purposes of formal analysis,
+their stability and mutual distinctness matter, whereas the concrete
+textual representation of the implementation string does not.
+
+% ============================================================
+\section{Related Work and Existing Solutions}
+% ============================================================
+
+\subsection{Password-Authenticated Key-Exchange Protocols}
+
+Password-authenticated key exchange (PAKE) refers to a class of protocols
+that enables two parties sharing a low-entropy secret (a password) to
+establish an authenticated session key resistant to offline dictionary
+attacks~\cite{boyko2000}. PAKE protocols are commonly divided into two
+categories:
+
+\begin{itemize}
+  \item \emph{Balanced PAKE}, in which both parties store equivalent
+        password-derived representations. Representative examples are
+        EKE~\cite{bellovin1992}, SPAKE2~\cite{ladd2023}, and
+        CPace/AuCPace~\cite{haase2019}.
+  \item \emph{Augmented PAKE (aPAKE)}, in which the server stores only a
+        verifier rather than the password or its direct equivalent.
+        Representative examples are SRP~\cite{wu1998},
+        AuCPace~\cite{haase2019}, and OPAQUE~\cite{jarecki2018}.
+\end{itemize}
+
+\begin{table}[htbp]
+\caption{Comparative characteristics of selected PAKE protocols}
+\label{tab:pake-comparison}
+\centering\scriptsize
+\begin{tabularx}{\textwidth}{@{}L{3.5cm}>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X@{}}
+\toprule
+Property & EKE & SRP & SPAKE2 & OPAQUE \\
+\midrule
+Type & Balanced & Augmented & Balanced & Augmented \\
+Non-equivalent server record & No & Partial & No & Yes \\
+Pre-computation resistance & No & No & No & Yes \\
+Forward secrecy & Yes & Yes & Yes & Yes \\
+Resistance to server-record compromise & No & Partial & No & In the passive-database model \\
+Formal security proof & IC & None & ROM & UC \\
+Quantum resistance & No & No & No & No \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+In Table~\ref{tab:pake-comparison}, the OPAQUE entry regarding server
+storage compromise should be read in the narrow but standard sense of
+compromise of the authentication-record database alone. It does not
+cover compromise of a global server secret from which OPRF keys may be
+derived.
+
+\subsection{OPAQUE: A Formal Overview}
+
+OPAQUE~\cite{jarecki2018} consists of a registration phase and an
+authentication phase, both built around an oblivious pseudorandom
+function (OPRF). Standard IETF OPAQUE relies on triple Diffie--Hellman
+(3DH):
+$dh_1 = sk_S \cdot PK_C$ (mutual authentication),
+$dh_2 = sk_S \cdot E_C$,
+$dh_3 = e_S \cdot PK_C$ (forward secrecy).
+The construction analyzed here adds a \textbf{fourth product}
+$dh_4 = e_S \cdot E_C$. This term binds the two ephemeral components
+within a single transcript and, at the level of 4DH intuition, is
+intended to complicate UKS-like substitutions; here it is treated as a
+design rationale rather than as an independently proved property. The security of baseline OPAQUE has
+been proved in the Universal Composability (UC) model~\cite{canetti2001}.
+
+\textbf{Oblivious pseudorandom function (OPRF).} The implementation
+uses hashing into the Ristretto255 group~\cite{devalence2024}:
+\begin{equation}
+  \alpha = r \cdot H'(\mathrm{ctx} \| x),\quad
+  \beta = k \cdot \alpha,\quad
+  F_k(x) = r^{-1} \cdot \beta
+  \label{eq:oprf-core}
+\end{equation}
+where $r \xleftarrow{\$} \mathbb{Z}_q^*$ is a random client-side
+blinding scalar and $k$ is the server's secret key.
+
+\subsection{Post-Quantum Cryptography and the NIST 2024 Standards}
+
+ML-KEM-768 is selected at NIST security level~3 (roughly aligned with
+AES-192). Its parameters are $|pk| = 1184$~bytes,
+$|ct| = 1088$~bytes, and $|ss| = 32$~bytes under IND-CCA2 security.
+The abstraction is
+\begin{equation}
+  \mathrm{KeyGen}() \to (pk, sk);\quad
+  \mathrm{Encaps}(pk) \to (ct, ss);\quad
+  \mathrm{Decaps}(sk, ct) \to ss.
+\end{equation}
+
+\subsection{Rationale for Selecting ML-KEM-768}
+
+The selection of ML-KEM-768 follows from the deployment constraints of
+interactive password authentication.
+On the one hand, ML-KEM-512 offers smaller messages and lower overhead,
+but it targets NIST level~1. On the other hand, ML-KEM-1024 provides a
+higher security margin at the cost of substantially larger wire-format
+messages and a heavier transport burden. For interactive password
+authentication, where the protocol already includes a comparatively
+expensive KSF, the relevant design criterion is not the largest
+conceivable security margin, but the balance among cryptographic
+strength, message size, and deployability.
+
+ML-KEM-768 provides a middle operating point in that trade-off space.
+Within the ML-KEM family it aligns NIST level~3 with the long-term
+protection of account credentials and session secrets while avoiding
+the larger transport burden imposed by ML-KEM-1024. Although
+$pk_{\mathrm{kem}}$ and $ct_{\mathrm{kem}}$ substantially enlarge
+messages relative to classical OPAQUE, they do not render the protocol
+unsuitable for interactive use.
+
+\subsection{Recent Approaches to Post-Quantum PAKE (2023--2026)}
+
+Between 2023 and 2026, several research lines matured sufficiently to
+define the current landscape of post-quantum PAKE and hybrid aPAKE
+design.
+
+KEM-based schemes have shown that compact lattice-based PAKE is
+feasible. A representative example is CHIC~\cite{arriaga2024}, which
+combines a compact construction with a UC-security argument and
+implementation-level evaluation. In parallel, UC- and QROM-oriented
+results such as~\cite{lyu2024uc} strengthen compositional guarantees
+for the post-quantum setting. These advances establish that
+post-quantum PAKE is no longer merely conceptual, but they do not
+directly resolve the migration problem for deployed OPAQUE-like
+systems, where asymmetric client--server roles, wire-format stability,
+and compatibility with existing authentication workflows are central.
+
+A second line of work considers replacement of classical OPRF
+components and the compilation of KEM primitives into PAKE.
+Lattice-based post-quantum OPRF constructions remain substantially
+more communication-intensive than elliptic-curve instantiations
+~\cite{beguinet2023}, and generalized KEM-to-PAKE approaches require
+careful treatment of ideal-cipher assumptions, hashing into public-key
+spaces, and low-entropy secrets~\cite{arriaga2024}. By contrast,
+isogeny-based approaches have lost practical relevance after the
+Castryck--Decru attacks on SIDH-derived constructions
+~\cite{castryck2023}.
+
+Recent work also treats hybridization itself as a distinct design
+problem. In particular,~\cite{hesse2024} studies PAKE combiners with
+efficient post-quantum instantiations, whereas~\cite{lyu2024hybrid}
+analyzes hybrid PAKE in the UC framework via parallel and sequential
+composition. An IETF draft on hybrid post-quantum augmented
+PAKE appeared in 2025 within the CFRG context~\cite{vos2025},
+indicating movement toward pre-standardization. The present paper
+contributes to this line by studying a concrete hybrid extension of
+OPAQUE with explicit message syntax, bounded formal claims, and a
+reproducible implementation.
+
+% ============================================================
+\section{Problem Statement}
+% ============================================================
+
+\subsection{Problem Formulation and Threat Model}
+
+Let $\mathcal{C}$ (client/initiator) and $\mathcal{S}$
+(server/responder) be the two parties of the protocol, where
+$\mathcal{C}$ holds the password $\mathrm{pwd}$ and $\mathcal{S}$
+stores the registration record $\mathrm{rec}$. Let $\mathbb{G}$ denote
+the prime-order Ristretto255 group of order~$q$ with generator~$g$.
+
+\textbf{Assets to be protected:}
+\begin{itemize}
+  \item the password $\mathrm{pwd}$; the static keys $sk_C, sk_S$; the
+        ephemeral keys $e_C, e_S, sk_{\mathrm{kem}}$;
+  \item the registration record
+        $\mathrm{rec} = (\mathrm{envelope}, pk_C)$;
+  \item the session key $K_s$, the master key $K_m$, and the shared
+        secret $ss_{\mathrm{kem}}$.
+\end{itemize}
+
+\textbf{Adversarial model.} Three adversarial classes are considered:
+\begin{itemize}
+  \item \emph{Classical adversary $\mathcal{A}_C$}: a
+        probabilistic polynomial-time active man-in-the-middle capable
+        of compromising server-side storage;
+  \item \emph{Quantum adversary $\mathcal{A}_Q$}: an adversary capable
+        of solving DLP/ECDLP via Shor's algorithm and pursuing a
+        ``harvest now, decrypt later'' strategy;
+  \item \emph{Composite adversary $\mathcal{A}_{CQ}$}: an active
+        man-in-the-middle equipped with a quantum computational oracle.
+\end{itemize}
+
+\textbf{Protocol requirements:}
+\begin{description}
+  \item[R1] (OPAQUE-derived goals): password secrecy, forward secrecy,
+        mutual authentication, and resistance to offline guessing;
+  \item[R2] (Post-quantum resilience): protection against
+        ``harvest now, decrypt later'';
+  \item[R3] (AND interpretation): the key-material combiner should be
+        compatible with an AND-style interpretation in the adopted
+        model, so that explicit recovery of the final key cannot be
+        reduced to weakening only one layer;
+  \item[R4] (Minimal overhead): preservation of three messages and
+        1.5 rounds of interaction;
+  \item[R5] (Implementability): a cross-platform implementation that is
+        reproducible and suitable for further engineering evolution.
+\end{description}
+
+\subsection{Formal Definitions}
+
+\begin{definition}[KEM]
+$(\mathrm{KeyGen}, \mathrm{Encaps}, \mathrm{Decaps})$:
+$\mathrm{KeyGen}() \to (pk, sk)$;
+$\mathrm{Encaps}(pk) \to (ct, ss)$;
+$\mathrm{Decaps}(sk, ct) \to ss$.
+IND-CCA2 security means that no polynomial-time adversary equipped with
+a decapsulation oracle can distinguish the real $ss$ from a random
+string.
+\end{definition}
+
+\begin{definition}[Hybrid aPAKE in the sense of this paper]
+Protocol $\Pi$ between $\mathcal{C}(\mathrm{pwd})$ and
+$\mathcal{S}(\mathrm{rec})$, in which
+\[
+  \mathrm{IKM}_{\mathrm{cl}} = dh_1 \| dh_2 \| dh_3 \| dh_4,\qquad
+  \mathrm{IKM}_{\mathrm{pq}} = ss_{\mathrm{kem}},
+\]
+and the final pre-key is formed as
+\[
+  \mathrm{PRK} = \mathrm{HKDF\text{-}Extract}\!\bigl(
+    \mathrm{salt}_{\tau},\;
+    \mathrm{IKM}_{\mathrm{cl}} \| \mathrm{IKM}_{\mathrm{pq}}\bigr).
+\]
+The subsequent analysis examines the extent to which such a
+construction is compatible with an AND-style interpretation of security
+within the threat model considered here.
+\end{definition}
+
+\begin{definition}[Pseudorandomness of HKDF-Extract]
+HKDF-Extract based on HMAC-SHA-512 is modeled as an extractor: if
+$\mathrm{IKM}$ contains hidden computational entropy relative to the
+adversary, then the output PRK is computationally indistinguishable
+from uniform up to advantage at most~$\varepsilon$.
+\end{definition}
+
+\textbf{Notation:} $\mathbb{G}$ denotes Ristretto255 with
+$|\mathbb{G}| = q$; lowercase letters denote scalars; uppercase letters
+denote curve points; $\|$ denotes concatenation; $H(\cdot)$ denotes
+SHA-512; and $\mathcal{K} = (K_s, K_m)$ denotes the session and master
+keys.
+
+% ============================================================
+\section{The Proposed Hybrid PQ-OPAQUE Protocol}
+% ============================================================
+
+\subsection{Architecture and Overview}
+
+Hybrid PQ-OPAQUE is a hybrid post-quantum extension of
+OPAQUE~\cite{ietf-opaque}. The protocol preserves the defining
+property of augmented PAKE, namely that the server never learns the
+password, while adding protection against the ``harvest now, decrypt
+later'' threat. The protocol consists of two phases:
+\emph{registration} (a one-time phase) and
+\emph{authentication} (the three-message KE1--KE2--KE3 exchange).
+Throughout the sequel, the terms \emph{wire format} and \emph{payload}
+are used in the senses fixed in Table~\ref{tab:terminology}.
+
+\begin{table}[htbp]
+\caption{Cryptographic primitives used in Hybrid PQ-OPAQUE}
+\label{tab:primitives}
+\centering\small
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}L{3.2cm}L{3.2cm}L{2.8cm}L{2cm}@{}}
+\toprule
+Component & Primitive & Implementation & Security level \\
+\midrule
+OPRF group & Ristretto255 & \makecell[l]{\codeid{curve25519-}\\\codeid{dalek}} & 128 bits \\
+Hash function & SHA-512 & \codeid{sha2} & 256 bits \\
+KDF (extract) & HKDF-Extract (HMAC-SHA-512) & \codeid{hmac + sha2} & 256 bits \\
+KDF (expand) & HKDF-Expand (HMAC-SHA-512) & \codeid{hmac + sha2} & 256 bits \\
+MAC & HMAC-SHA-512 & \codeid{hmac + sha2} & 256 bits \\
+KSF & Argon2id (MODERATE) & \codeid{argon2} & Adaptive \\
+AEAD & XSalsa20-Poly1305 & \makecell[l]{\codeid{crypto\_}\\\codeid{secretbox}} & 256 bits \\
+KEM & ML-KEM-768 (FIPS~203) & \codeid{ml-kem} & NIST Level~3 \\
+Classical exchange & 4DH (Ristretto255) & \makecell[l]{\codeid{curve25519-}\\\codeid{dalek}} & 128 bits \\
+Constant-time comparison & Bytewise without early exit & \codeid{subtle} & --- \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+\begin{table}[htbp]
+\caption{Authentication-message sizes in payload and wire format}
+\label{tab:message-sizes}
+\centering\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrr}
+\toprule
+Message & Classical payload & Hybrid payload & Hybrid wire format & Post-quantum overhead \\
+\midrule
+KE1 & 88 bytes & 1272 bytes & 1273 bytes & $+1184$ ($pk_{\mathrm{kem}}$) \\
+KE2 & 288 bytes & 1376 bytes & 1377 bytes & $+1088$ ($ct_{\mathrm{kem}}$) \\
+KE3 & 64 bytes & 64 bytes & 65 bytes & $0$ \\
+\midrule
+\textbf{Total} & \textbf{440 bytes} & \textbf{2712 bytes} & \textbf{2715 bytes} & \textbf{$+2272$ ($+516\%$)} \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[x=1.85cm,y=0.0031cm,font=\small]
+  \draw[->,gray!75] (0,0) -- (3.9,0) node[right] {Message};
+  \draw[->,gray!75] (0,0) -- (0,1520) node[above] {Bytes};
+
+  \foreach \yy in {0,500,1000,1500} {
+    \draw[gray!20] (0,\yy) -- (3.7,\yy);
+    \node[left,gray!80] at (0,\yy) {\yy};
+  }
+
+  % KE1
+  \fill[eclblue!75] (0.30,0) rectangle (0.55,88);
+  \fill[eclgold!85] (0.62,0) rectangle (0.87,1273);
+  \node[below] at (0.59,0) {KE1};
+
+  % KE2
+  \fill[eclblue!75] (1.45,0) rectangle (1.70,288);
+  \fill[eclgold!85] (1.77,0) rectangle (2.02,1377);
+  \node[below] at (1.74,0) {KE2};
+
+  % KE3
+  \fill[eclblue!75] (2.60,0) rectangle (2.85,64);
+  \fill[eclgold!85] (2.92,0) rectangle (3.17,65);
+  \node[below] at (2.89,0) {KE3};
+
+  \draw[eclblue!75,fill=eclblue!75] (0.55,1465) rectangle (0.73,1510);
+  \node[anchor=west] at (0.80,1487) {Classical payload};
+  \draw[eclgold!85!black,fill=eclgold!85] (2.10,1465) rectangle (2.28,1510);
+  \node[anchor=west] at (2.35,1487) {Hybrid wire format};
+\end{tikzpicture}
+\caption{Comparison of authentication-message sizes: the additional
+wire-format overhead is concentrated in KE1 and KE2, whereas KE3
+remains essentially unchanged.}
+\label{fig:wire-size-growth}
+\end{figure}
+
+Figure~\ref{fig:wire-size-growth} shows that the post-quantum layer
+leaves finalization essentially unchanged while substantially enlarging
+the transport budget of the first two messages, namely the phases that
+carry $pk_{\mathrm{kem}}$ and $ct_{\mathrm{kem}}$.
+
+\subsection{Registration Phase}
+
+\textbf{Step~1 ($\mathcal{C} \to \mathcal{S}$).} Generation of the
+static pair $(sk_C, PK_C)$ followed by OPRF blinding:
+\begin{equation}
+  r \xleftarrow{\$} \mathbb{Z}_q^*, \qquad
+  B = r \cdot H'\!\bigl(\Label{oprf} \| \mathtt{0x00} \| \mathrm{pwd}\bigr)
+  \label{eq:reg-blind}
+\end{equation}
+$\mathrm{RegistrationRequest} = B$ (32~bytes).
+
+\textbf{Step~2 ($\mathcal{S} \to \mathcal{C}$).} Derivation of the OPRF
+key:
+\begin{equation}
+  s_{\mathrm{oprf}} =
+  \mathrm{HMAC}\!\bigl(\sigoprf, \Label{seed}\bigr)[0..31]
+  \label{eq:oprf-seed}
+\end{equation}
+\begin{equation}
+  k_{\mathrm{oprf}} = \mathrm{ScalarReduce}\!\bigl(
+    \mathrm{HMAC}\!\bigl(
+      s_{\mathrm{oprf}},\;
+      \Label{key} \| \acct \| \mathrm{ctr}
+    \bigr)\bigr)
+  \label{eq:oprf-key}
+\end{equation}
+where $\mathrm{ctr}$ is the smallest counter for which the resulting
+scalar is non-zero. The server computes
+$Z = k_{\mathrm{oprf}} \cdot B$; the key $k_{\mathrm{oprf}}$ is then
+immediately destroyed. The response is
+$Z \| PK_S$ (64~bytes).
+
+\textbf{Step~3 ($\mathcal{C}$).} OPRF unblinding:
+\[
+  U = r^{-1} \cdot Z.
+\]
+OPRF output:
+\begin{equation}
+  y_{\mathrm{oprf}} = H\!\bigl(\Label{oprf} \|
+  \mathtt{0x01} \| \mathrm{pwd} \| U\bigr)
+  \label{eq:oprf-output}
+\end{equation}
+KSF input and salt:
+\begin{equation}
+  x_{\mathrm{ksf}} = H\!\bigl(
+    \Label{ksf} \|
+    y_{\mathrm{oprf}} \| \mathrm{pwd}\bigr),
+\end{equation}
+\begin{equation}
+  \mathrm{salt}_{\mathrm{ksf}} =
+  H\!\bigl(\Label{salt} \|
+  y_{\mathrm{oprf}}\bigr)[0..15].
+\end{equation}
+The randomized password is then computed as
+\begin{equation}
+  \mathrm{rwd} = \mathrm{Argon2id}\!\bigl(
+    x_{\mathrm{ksf}},\; \mathrm{salt}_{\mathrm{ksf}};\;
+    m = 256~\mathrm{MiB},\; t = 3,\; p = 1\bigr)
+  \label{eq:rwd}
+\end{equation}
+The envelope is sealed using XSalsa20-Poly1305 and a key derived via
+HKDF;
+$\mathrm{RegistrationRecord} = \mathrm{Envelope} \| PK_C$
+(168~bytes of payload and 169~bytes in wire format, including the
+version prefix).
+
+\subsection{Binding of Account Identifier, Version, and Context}
+
+The protocol fixes additional context that remains implicit in many
+abstract descriptions of OPAQUE. Every wire-format message carries a
+one-byte version prefix $v = \mathtt{0x01}$, which separates the
+payload from the full transmission format and enables rejection of
+unsupported versions. The protocol also uses an explicit account
+identifier $\acct$, treated not merely as a database lookup key but as
+cryptographic context.
+
+Let
+\begin{equation}
+  \eta = H\!\bigl(\Label{ctx} \| \acct\bigr)
+  \label{eq:acct-context}
+\end{equation}
+Distinct domain-separation labels separate the baseline OPRF, KSF, and
+transcript contexts from the added account-binding and hybrid-combiner
+contexts. The version indices embedded in these labels are local domain
+identifiers rather than global version numbers of the overall scheme.
+The identifier $\acct$ influences the protocol at two points:
+\begin{enumerate}
+  \item through derivation of an account-specific OPRF key, as in
+        Eq.~\eqref{eq:oprf-key};
+  \item through inclusion of $\eta$, defined in
+        Eq.~\eqref{eq:acct-context}, in the extended transcript
+        \eqref{eq:hybrid-transcript}, and hence in the hybrid combiner
+        \eqref{eq:hybrid-prk} and the derived keys
+        \eqref{eq:key-derivation}.
+\end{enumerate}
+This binding prevents wire-format elements from being transplanted
+between distinct accounts even when the password is identical, and it
+renders the role of account identity explicit in the cryptographic
+specification.
+
+\subsection{Authentication Phase and Hybrid Key Exchange}
+
+\subsubsection{Generation of KE1 ($\mathcal{C} \to \mathcal{S}$)}
+
+\begin{align}
+  e_C &\xleftarrow{\$} \mathbb{Z}_q^*,\qquad
+  E_C = e_C \cdot g,\qquad
+  n_C \xleftarrow{\$} \{0,1\}^{192},\\
+  (pk_{\mathrm{kem}}, sk_{\mathrm{kem}})
+    &\leftarrow \mathrm{ML\text{-}KEM\text{-}768.KeyGen}().
+\end{align}
+\begin{equation}
+  \mathrm{KE1} = B \| E_C \| n_C \| pk_{\mathrm{kem}}
+  \quad(32 + 32 + 24 + 1184 = 1272~\text{bytes of payload}).
+\end{equation}
+In wire format, the message is $v \| \mathrm{KE1}$ and occupies
+1273~bytes.
+
+\subsubsection{Generation of KE2 ($\mathcal{S} \to \mathcal{C}$)}
+
+\textbf{Four-way Diffie--Hellman (4DH):}
+\begin{equation}
+  dh_1 = sk_S \cdot PK_C,\quad
+  dh_2 = sk_S \cdot E_C,\quad
+  dh_3 = e_S \cdot PK_C,\quad
+  dh_4 = e_S \cdot E_C.
+\end{equation}
+
+\textbf{ML-KEM-768 encapsulation:}
+\begin{equation}
+  (ct_{\mathrm{kem}}, ss_{\mathrm{kem}})
+    \leftarrow \mathrm{ML\text{-}KEM\text{-}768.Encaps}(pk_{\mathrm{kem}}).
+\end{equation}
+
+\textbf{Extended transcript} (including post-quantum elements):
+\begin{align}
+  \tau &= E_C \| E_S \| n_C \| n_S \| PK_C \| PK_S \|
+         \mathrm{CredResp} \| pk_{\mathrm{kem}} \| ct_{\mathrm{kem}} \| \eta
+         \notag\\
+  \tau_H &= H\!\bigl(L_{\tau} \| \tau\bigr)
+  \label{eq:hybrid-transcript}
+\end{align}
+
+\textbf{Hybrid combiner:}
+\begin{align}
+  \mathrm{combined\_ikm} &= dh_1 \| dh_2 \| dh_3 \| dh_4 \| ss_{\mathrm{kem}}
+  \quad(128 + 32 = 160~\text{bytes})
+  \notag\\
+  \mathrm{salt} &= \Label{comb} \| \tau_H
+  \notag\\
+  \mathrm{PRK} &= \mathrm{HKDF\text{-}Extract}(\mathrm{salt},
+    \mathrm{combined\_ikm})
+  \label{eq:hybrid-prk}
+\end{align}
+
+\textbf{Key derivation.} Let
+$\KLabel{s}$, $\KLabel{m}$, $\KLabel{macS}$, and $\KLabel{macC}$
+denote fixed labels for the session key, the master key, and the two
+confirmation keys:
+\begin{align}
+  K_s &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK}, \KLabel{s}, 64)
+  \notag\\
+  K_m &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK}, \KLabel{m}, 32)
+  \notag\\
+  K_{\mathrm{mac}}^S &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK},
+    \KLabel{macS}, 64)
+    \notag\\
+  K_{\mathrm{mac}}^C &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK},
+    \KLabel{macC}, 64)
+  \label{eq:key-derivation}
+\end{align}
+\begin{align}
+  \mathrm{KE2} &= n_S \| E_S \| \mathrm{CredResp} \| {}\\
+  &\quad \mathrm{HMAC}(K_{\mathrm{mac}}^S, \tau) \| ct_{\mathrm{kem}}
+    \quad(1376~\text{bytes of payload}).
+\end{align}
+In wire format, the message is $v \| \mathrm{KE2}$ and occupies
+1377~bytes.
+
+\subsubsection{Generation of KE3 ($\mathcal{C} \to \mathcal{S}$)}
+
+\begin{enumerate}
+  \item OPRF finalization, opening of the envelope, and recovery of
+        $(PK_S, sk_C, PK_C)$;
+  \item Mirror 4DH:
+        $dh_1 = sk_C \cdot PK_S$,
+        $dh_2 = e_C \cdot PK_S$, $dh_3 = sk_C \cdot E_S$,
+        $dh_4 = e_C \cdot E_S$ (additional binding of the ephemeral
+        components at the level of 4DH intuition);
+  \item Decapsulation:
+        $ss_{\mathrm{kem}} =
+        \mathrm{ML\text{-}KEM\text{-}768.Decaps}(sk_{\mathrm{kem}},
+        ct_{\mathrm{kem}})$; $sk_{\mathrm{kem}}$ is destroyed
+        immediately;
+  \item Re-derivation of the same PRK; verification of
+        $\mathrm{HMAC}(K_{\mathrm{mac}}^S, \tau)$ by means of a
+        constant-time bytewise comparison without early exit;
+  \item $\mathrm{KE3} = \mathrm{HMAC}(K_{\mathrm{mac}}^C, \tau)$
+        (64~bytes of payload, 65~bytes including the version prefix).
+\end{enumerate}
+
+\subsubsection{Completion on the Server Side}
+
+KE3 is verified using a constant-time comparison routine. Upon success,
+the pair $(K_s, K_m)$ becomes available to both parties, thereby
+confirming mutual authentication. Upon failure, all key material is
+destroyed immediately via secure zeroization.
+
+\subsection{Inclusion of Post-Quantum Elements in the Transcript}
+
+The inclusion of $pk_{\mathrm{kem}}$ and $ct_{\mathrm{kem}}$ in the
+transcript is required to bind the post-quantum exchange to the
+classical one. Without this binding, a man-in-the-middle adversary
+could replace $pk_{\mathrm{kem}}$ with an attacker-controlled key at
+the ML-KEM layer. This linkage is captured by the extended
+transcript~\eqref{eq:hybrid-transcript} and the hybrid
+combiner~\eqref{eq:hybrid-prk}. The additional inclusion of the
+account-context hash $\eta$ further prevents a valid transcript from
+being transplanted across users or replayed for a different account
+$\acct$. The transcript therefore binds the classical and
+post-quantum layers to each other and, at the same time, binds both to
+a concrete account and wire-format version.
+
+% ============================================================
+\section{Security Analysis}
+% ============================================================
+
+\subsection{Formal Analysis of Security Properties}
+
+\paragraph{Offline guessing under a fixed trust boundary.}
+Assume that the adversary obtains the passive server-side storage
+$\mathrm{rec}$ and the observable transcripts, but not $\sigoprf$.
+Under that condition, offline verification of dictionary candidates is
+infeasible except with negligible advantage arising from a break of OPRF
+obliviousness or of envelope security. If $\sigoprf$ is compromised,
+the problem reduces to dictionary search with per-guess cost dominated
+by Argon2id. The claim is therefore conditional on an explicit trust
+boundary rather than universal across all OPAQUE deployments.
+
+\begin{sketchproof}
+\textbf{Case 1: \textnormal{$\sigoprf$ not compromised.}}
+Without the account-specific OPRF key, the adversary cannot compute
+$y_{\mathrm{oprf}}$ via~\eqref{eq:oprf-output}, and hence cannot
+reconstruct $x_{\mathrm{ksf}}$, $\mathrm{salt}_{\mathrm{ksf}}$, or
+$\mathrm{rwd}$ via~\eqref{eq:rwd}. The envelope record therefore does
+not provide an effective offline password-checking oracle. Replacing
+the OPRF output with a random value yields
+\[
+  |\Pr[S_1] - \Pr[S_0]| \leq
+  \mathrm{Adv}_{\mathrm{OPRF}}^{\mathrm{obliv}}
+  \leq \mathrm{Adv}_{\mathrm{Ristretto255}}^{\mathrm{CDH}}.
+\]
+\textbf{Game~1 $\to$ Game~2:} replace the envelope with an encryption
+of a random string (IND-CPA XSalsa20-Poly1305):
+\[
+  |\Pr[S_2] - \Pr[S_1]| \leq
+  \mathrm{Adv}_{\mathrm{XSalsa20}}^{\mathrm{IND\text{-}CPA}}.
+\]
+\textbf{Consequence.} In the absence of compromise of
+$\sigoprf$, the best available strategy collapses to online guessing,
+whence
+\[
+  \mathrm{Adv}^{\mathrm{dict}} \leq
+  \mathrm{Adv}_{\mathrm{Ristretto255}}^{\mathrm{CDH}} +
+  \mathrm{Adv}_{\mathrm{XSalsa20}}^{\mathrm{IND\text{-}CPA}} +
+  \frac{q_{\mathrm{on}}}{|\mathcal{D}|}.
+\]
+\textbf{Case 2: \textnormal{$\sigoprf$ compromised.}} Then
+each dictionary guess $\mathrm{pwd}'$ can be checked offline by
+computing $y_{\mathrm{oprf}}'$, then
+$x_{\mathrm{ksf}}'$, $\mathrm{salt}_{\mathrm{ksf}}'$, and finally one
+attempt to open the envelope. The cost of a single guess is dominated,
+both asymptotically and empirically, by Argon2id, that is, by the
+procedure~\eqref{eq:rwd}:
+\[
+  T_{\mathrm{guess}} \approx T_{\mathrm{Argon2id}},\qquad
+  C_{\mathrm{offline}} \approx |\mathcal{D}| \cdot T_{\mathrm{guess}}.
+  \qquad \blacksquare
+\]
+\end{sketchproof}
+
+\begin{utheorem}[Forward Secrecy]
+Compromise of the long-term keys $sk_C$ and $sk_S$ after session
+completion does not suffice to recover $K_s$, under the hardness of CDH
+and the IND-CCA security of ML-KEM-768.
+\end{utheorem}
+
+\begin{sketchproof}
+After compromise, $dh_1$ is known. However,
+$dh_2 = sk_S \cdot E_C$ requires the ephemeral $e_C$ (destroyed), and
+$dh_3 = e_S \cdot PK_C$ requires the ephemeral $e_S$ (destroyed).
+Analogously, $ss_{\mathrm{kem}}$ remains protected under the IND-CCA
+security of ML-KEM-768 because $sk_{\mathrm{kem}}$ is destroyed after
+decapsulation.
+\[
+  \mathrm{Adv}^{\mathrm{FS}} \leq
+  \mathrm{Adv}_{\mathrm{CDH}} +
+  \mathrm{Adv}_{\mathrm{ML\text{-}KEM}}^{\mathrm{IND\text{-}CCA}}.
+  \qquad \blacksquare
+\]
+\end{sketchproof}
+
+\begin{utheorem}[Mutual Authentication]
+The probability of forging the MAC is negligible under the PRF security
+of HMAC-SHA-512:
+\[
+  \mathrm{Adv}^{\mathrm{auth}} \leq
+  \mathrm{Adv}_{\mathrm{HMAC}}^{\mathrm{PRF}} + q_s / 2^{512}.
+  \qquad \blacksquare
+\]
+\end{utheorem}
+
+\paragraph{Interpretive claim on the AND property of the hybrid combiner.}
+Let
+\[
+  \mathrm{IKM}_{\mathrm{cl}} = dh_1 \| dh_2 \| dh_3 \| dh_4,\qquad
+  \mathrm{IKM}_{\mathrm{pq}} = ss_{\mathrm{kem}}.
+\]
+If, for a fixed transcript $\tau$, at least one of the sources
+$\mathrm{IKM}_{\mathrm{cl}}$ or $\mathrm{IKM}_{\mathrm{pq}}$ remains
+computationally indistinguishable from uniform, then
+\[
+  \mathrm{PRK} =
+  \mathrm{HKDF\text{-}Extract}(\mathrm{salt}_{\tau},
+  \mathrm{IKM}_{\mathrm{cl}} \| \mathrm{IKM}_{\mathrm{pq}})
+\]
+may be regarded as pseudorandom under the standard extractor
+interpretation of HKDF-Extract. This motivates the following AND-style
+reading: explicit recovery of the real session key from the transcript
+requires compromise of \emph{both} sources. The claim is not a
+computational proof of the combiner, but an extractor-based
+interpretation consistent with the adopted model.
+
+\begin{sketchproof}
+Let $S$ denote the source among
+$\{\mathrm{IKM}_{\mathrm{cl}}, \mathrm{IKM}_{\mathrm{pq}}\}$ that
+remains pseudorandom relative to the fixed transcript $\tau$, and let
+$X$ denote the other source. Then
+$\mathrm{IKM}_{\mathrm{cl}} \| \mathrm{IKM}_{\mathrm{pq}}$ may be
+written as $S \| X$. The standard extractor property of HMAC-based
+HKDF-Extract~\cite{krawczyk2010} suggests that if $S$ is
+computationally indistinguishable from uniform, then $\mathrm{PRK}$
+remains pseudorandom even for arbitrary $X$. This yields the upper
+bound: indistinguishability of the final key can fail only
+through a break of the surviving source or a break of the extractor
+itself:
+\[
+  \mathrm{Adv}^{\mathrm{hybrid}} \leq
+  \min\!\bigl(\mathrm{Adv}_{\mathrm{CDH}}^{\mathrm{Ristretto255}},\;
+  \mathrm{Adv}_{\mathrm{ML\text{-}KEM}}^{\mathrm{IND\text{-}CCA}}\bigr)
+  + \mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}}.
+  \qquad \blacksquare
+\]
+\end{sketchproof}
+
+This bound motivates the AND-style interpretation used in the sequel.
+If at least one of the two sources remains computationally hidden, and
+HKDF-Extract behaves as an extractor, then the derived PRK remains
+pseudorandom up to the additive extractor term. The interpretation is
+therefore narrow: within the present reduction sketch and
+symbolic analysis, compromise of the final key requires simultaneous
+weakening of both the classical and post-quantum layers.
+
+\subsection{Resistance to Known Attacks}
+
+\textbf{Offline dictionary attacks.} The protection claim is stated for
+\emph{database compromise without compromise of $\sigoprf$}. Under this
+condition, three independent layers
+operate: (1)~OPRF, because without the server-side key
+$k_{\mathrm{oprf}}$ the adversary cannot compute $\mathrm{rwd}$;
+(2)~Argon2id with MODERATE parameters (256~MiB, 3 iterations), for
+which one guess costs approximately
+$T_{\mathrm{guess}} \approx 0.5$~s on the benchmarking platform, so a
+sequential exhaustive dictionary search scales as
+$C_{\mathrm{offline}} \approx |\mathcal{D}| \cdot T_{\mathrm{guess}}$;
+and (3)~XSalsa20-Poly1305, because verification of a candidate requires
+successful authenticated decryption. If $\sigoprf$ is
+compromised, this claim does not automatically transfer to the new
+threat model and requires separate analysis.
+
+\textbf{Man-in-the-middle attack.} The transcript $\tau$ contains
+\emph{all} public elements, including $pk_{\mathrm{kem}}$ and
+$ct_{\mathrm{kem}}$. Modification of any field results in MAC
+mismatch.
+
+\textbf{Replay attack.} Ephemeral nonces (192 bits) and ephemeral keys
+are generated afresh for every session. The nonce-collision probability
+is $2^{-192}$.
+
+\textbf{Harvest-now-decrypt-later attack.} Even if
+$dh_1,\ldots,dh_4$ are recovered via Shor's algorithm, the secret
+$ss_{\mathrm{kem}}$ remains protected by ML-KEM-768
+(Module-LWE, approximately AES-192 level).
+
+\textbf{Key-compromise impersonation (KCI).} Compromise of $sk_S$ does
+not grant access to $dh_2 = sk_S \cdot E_C$ after session completion
+(it depends on the destroyed $e_C$), nor to $ss_{\mathrm{kem}}$
+(it depends on the destroyed $sk_{\mathrm{kem}}$).
+
+\textbf{Timing side channels.} All MAC comparisons are performed by
+constant-time bytewise comparison without early exit. Scalar
+multiplication on Ristretto255 and the NTT within ML-KEM are implemented
+in a constant-time manner.
+
+\subsection{Formal Verification}
+
+\subsubsection{Verification Overview}
+
+The protocol was analyzed with two independent symbolic tools in the
+Dolev--Yao model: ProVerif~2.05 and Tamarin~Prover~1.10.0. Symbolic
+verification supports the structural protocol claims reported here, but
+it is not a line-by-line proof of correctness for the Rust/FFI
+implementation. ProVerif is used in separate secrecy and authentication
+models, whereas Tamarin is applied to a verified surrogate 4DH model.
+The results are interpreted together with the model boundaries and the
+accompanying implementation artifacts~\cite{cremers2012,basin2018}.
+
+\begin{table}[htbp]
+\caption{Summary of symbolic verification results and implementation checks}
+\label{tab:verification-summary}
+\centering\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{cL{4cm}lll}
+\toprule
+\# & Property & ProVerif & Tamarin (surrogate 4DH model) & Rust tests \\
+\midrule
+P1 & Session-key secrecy & \textbf{confirmed} & \textbf{confirmed} (27 steps) & 4 tests \\
+P2 & Password secrecy on the wire & \textbf{confirmed} & \textbf{confirmed} (3 steps) & 6 tests \\
+P3 & Classical forward secrecy & --- & \textbf{confirmed} (119 steps) & 3 tests \\
+P4 & Post-quantum forward secrecy & --- & argued via P6 within the model & 3 tests \\
+P5a & Initiator authentication & \textbf{confirmed} & \textbf{confirmed} (32 steps) & 8 tests \\
+P5b & Responder authentication & \textbf{confirmed} & \textbf{confirmed} (17 steps) & --- \\
+P5c & Injective mutual authentication & \textbf{confirmed} & follows from P5a/P5b & --- \\
+P6 & AND interpretation of hybrid security & --- & \textbf{supported in the surrogate model} (29 steps) & 4 tests \\
+P7 & Resistance to offline guessing & --- & \textbf{supported for the database model without compromise of $\sigoprf$} (4 steps) & 6 tests \\
+--- & Successful completion & --- & \textbf{confirmed} (16 steps) & 5 tests \\
+\midrule
+\textbf{Total} & & \textbf{5/5 queries} & \textbf{8/8 lemmas} & \textbf{155 passed, 1 skipped} \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+Table~\ref{tab:verification-summary} combines symbolic and
+implementation-level checks to show which claims are supported at which
+layer. ProVerif is most useful for message logic and correspondence
+properties in a simplified unbounded-session setting, Tamarin for
+stateful properties such as forward secrecy and the combiner
+interpretation, and Rust tests for failures that arise only in the
+concrete implementation.
+
+\subsubsection{ProVerif 2.05}
+
+Toolchain: ProVerif~2.05 (OCaml~5.4.0), macOS Darwin~25.2.0. Two
+complementary models were used: a baseline secrecy model and a separate
+authentication model, both archived in the accompanying artifact
+package. The split into two models is deliberate: a single saturated
+model did not yield stable convergence for all queries simultaneously.
+The ProVerif results therefore provide two compatible but distinct
+views of the same protocol.
+
+The most informative query for mutual authentication is P5c (injective
+mutual correspondence): it states that each successful completion on
+the responder side corresponds to a distinct matching completion on the
+initiator side for the same pair of parties and the same session key. A
+positive result means that successful completion on the responder side
+cannot be explained by replaying a single successful trace across
+multiple client completions. This result should not be misread as a
+computational proof of the entire implementation: the model omits side
+channels, variation in error formatting, timing-related leakage, and a
+range of network-level details that remain the domain of implementation
+testing.
+
+\subsubsection{Tamarin Prover 1.10.0}
+
+Toolchain: Tamarin~1.10.0 (Maude~3.4). A surrogate model of the hybrid
+combiner was verified; the archived proof log records a total solving
+time of \textbf{22.83~seconds} for all eight lemmas.
+
+\begin{table}[htbp]
+\caption{Tamarin lemmas established for the surrogate 4DH model}
+\label{tab:tamarin-lemmas}
+\centering\small
+\begin{tabularx}{\textwidth}{@{}L{4.5cm}rX@{}}
+\toprule
+Lemma & Steps & Key property \\
+\midrule
+Session-key secrecy (P1) & 27 & Without corruption events, the adversary cannot derive the session key \\
+Password secrecy (P2) & 3 & The password never appears in externally observable model events \\
+Forward secrecy (P3) & 119 & Post-session compromise of long-term keys does not reveal ephemeral secrets \\
+Initiator authenticity (P5a) & 32 & Successful client completion requires prior responder participation \\
+Responder authenticity (P5b) & 17 & Successful server completion requires a valid KE3 \\
+AND-style combiner interpretation (P6) & 29 & Without compromise of the ephemeral secrets, the 4DH and KEM components are not recovered jointly \\
+Offline-guessing resistance in the DB model (P7) & 4 & Database compromise reveals the record but not the OPRF key \\
+Executability (correctness) & 16 & A successful protocol-completion trace exists \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The verified Tamarin model does not use an embedded Diffie--Hellman
+equational theory for the full 4DH construction. Instead, it replaces
+4DH with an abstract secret
+$\xi_{\mathrm{4dh}} = h(\langle \mathrm{sk}_C,\mathrm{sk}_S,e_C,e_S\rangle)$
+and checks which compromise events are required for the adversary to
+derive the session key. This abstraction makes automated reasoning
+feasible and is therefore interpreted as surrogate symbolic
+evidence rather than a formal proof of every concrete Ristretto255
+operation.
+
+Lemma P6 is central to the combiner interpretation. It states that from
+the establishment of the session key and the absence of disclosure of
+the initiator's and responder's ephemeral secrets, non-derivability of
+that key for the adversary follows. The machine verification of this
+lemma completes positively in 29 steps.
+
+The lemma permits compromise of long-term keys but disallows disclosure
+of ephemeral ones. Even with knowledge of the parties' long-term
+secrets, the adversary cannot recover the hybrid key material without
+simultaneous access to the ephemeral components of both the classical
+and the post-quantum layers. Within this surrogate model, this
+supports the AND-style interpretation: derivation of the session key
+requires simultaneous weakening of \emph{both} layers. The lemma
+therefore provides an indirect argument for P4; it does not
+replace a separate formalization of post-quantum forward secrecy.
+
+\subsubsection{Limits of Interpretation}
+
+To avoid overstating the formal results, four principal limitations are
+recorded.
+\begin{enumerate}
+  \item \textbf{Surrogate representation of 4DH.} The verified Tamarin
+        model abstracts the 4DH component into a single knowledge
+        function. This facilitates the proof but does not replace
+        analysis of the concrete algebraic properties of group
+        operations.
+  \item \textbf{Split ProVerif models.} Secrecy and authentication are
+        studied not in one universal model but in two separate
+        artifacts. Hence the 5/5 outcome should be interpreted as the
+        aggregate of two mutually consistent models rather than as a
+        monolithic proof.
+  \item \textbf{Boundary of offline-resistance claims.} Lemma P7 and the
+        corresponding Rust tests cover database compromise \emph{without}
+        compromise of $\sigoprf$. If $\sigoprf$ is exposed, the
+        offline-resistance property requires separate analysis and
+        should not be transferred automatically from the model.
+  \item \textbf{Gap between model and implementation.} Symbolic
+        verification does not cover side channels, compiler behavior,
+        memory-allocation properties, FFI API mistakes, or
+        vulnerabilities in external crates. For this reason, the formal
+        results reported here complement tests and benchmarks rather than
+        substituting for them.
+\end{enumerate}
+
+% ============================================================
+\section{Implementation and Experimental Evaluation}
+% ============================================================
+
+\subsection{Architecture of the Rust Implementation}
+
+The protocol is implemented in \textbf{Rust~1.93.1} as a multi-crate
+workspace. Rust was selected for its compile-time memory-safety
+guarantees, for the ability to keep the cryptographic core entirely
+free of \codeid{unsafe} blocks, and for the availability of mature
+secret-zeroization mechanisms.
+
+\begin{table}[htbp]
+\caption{Source-code metrics of the workspace}
+\label{tab:code-metrics}
+\centering\small
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}L{3.2cm}L{3.8cm}rL{3.0cm}@{}}
+\toprule
+Component & Role & LoC & Principal dependencies \\
+\midrule
+\textbf{Cryptographic core} & Primitives, key derivation, and protocol serialization & 1509 & Ristretto255, ML-KEM, Argon2id \\
+\textbf{Client pipeline} & Initiator logic and client-side protocol phases & 899 & cryptographic core \\
+\textbf{Server pipeline} & Responder logic and session completion & 907 & cryptographic core \\
+\textbf{Interlanguage layer} & FFI interface and external protocol invocation & 2020 & client and server pipelines \\
+\midrule
+\textbf{Total (main code)} & & \textbf{5335} & \\
+Tests & & 3961 & property-based and regression scenarios \\
+Benchmarks & & 1460 & Criterion \\
+Formal models & & 1806 & Tamarin, ProVerif \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+\subsection{Memory Safety and Secret Zeroization}
+
+For a cryptographic system, security depends not only on the selected
+primitives but also on the discipline with which secrets are handled in
+process memory. In the implementation studied here, the
+cryptographic core and both protocol pipelines are compiled under a
+strict no-\codeid{unsafe}-code policy, whereas operations that require
+low-level pointer manipulation are confined to a narrow FFI boundary.
+Such architectural separation does not replace formal analysis of the
+implementation, but it substantially narrows the defect surface at the
+memory-management boundary: use-after-free defects, double release,
+loss of correct buffer ownership, and violations of buffer-length
+invariants.
+
+Control over secret lifetime is equally important. The
+implementation systematically applies automatic zeroization when
+objects leave scope together with dedicated wrappers for transient
+values, so that sensitive intermediate quantities remain in memory only
+for the minimal interval required. This does not eliminate every
+possible leak, but it materially reduces the post-compromise residue of
+sensitive data in memory dumps, crash logs, and reused buffers. In particular, the
+following values are zeroized:
+\begin{itemize}
+  \item the user password and the OPRF blinding scalar after OPRF
+        finalization;
+  \item the ephemeral ML-KEM secret after decapsulation;
+  \item the classical 4DH material, the transcript hash, and the PRK
+        after derivation of descendant keys;
+  \item the context hash of $\acct$ after completion of KE2/KE3;
+  \item the initiator and responder state structures upon interruption
+        or any securely rejected completion path.
+\end{itemize}
+
+\subsection{Testing and Reproducibility}
+
+The evaluated revision of the workspace contains 155 passing tests and
+1 deliberately skipped slow regression scenario. The package includes
+unit, integration, property-based, and regression tests for the
+protocol lifecycle, wire format, FFI contract, OPRF/KEM correctness,
+and secure rejection of invalid states.
+
+These checks complement the symbolic analysis rather than duplicate it.
+Rust tests exercise serialization, version handling, state-lifecycle
+invariants, and input-boundary conditions in the executable
+implementation; Criterion~0.5.1 benchmarks~\cite{heyer2023} quantify
+the cost of the main primitives and protocol phases; archived ProVerif
+and Tamarin models document the formal abstractions used for the
+security claims.
+
+Benchmarking was performed on an Apple~M1~Pro platform
+(8 performance + 2 efficiency cores, 16~GB LPDDR5, macOS~26.2,
+Rust~1.93.1) in deterministic single-threaded optimized-build mode.
+Criterion applies bootstrap estimation of the mean and the 95\%
+confidence interval; the values reported below should be interpreted
+as reproducible estimates for this platform rather than as universal
+constants for every environment. Reproducing the full test suite, the
+benchmark suite, and the formal models is sufficient to check the main
+quantitative and structural claims reported here.
+
+\subsection{Benchmarks of Cryptographic Primitives}
+
+\begin{table}[htbp]
+\caption{Benchmark results for cryptographic primitives}
+\label{tab:micro-bench}
+\centering\small
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}llrr@{}}
+\toprule
+Primitive & Operation & $\hat{\mu}$ & 95\% CI \\
+\midrule
+Ristretto255 & Key-pair generation & 16.74~$\mu$s & [16.03; 17.84] \\
+Ristretto255 & Single DH & 46.41~$\mu$s & [45.94; 46.98] \\
+Ristretto255 & 3DH (baseline) & 119.04~$\mu$s & [117.10; 122.14] \\
+Ristretto255 & \textbf{4DH (protocol)} & $\approx\mathbf{164}$~\textbf{$\mu$s} & [$\approx$162; $\approx$167] \\
+ML-KEM-768 & Key-pair generation & 41.05~$\mu$s & [40.69; 41.68] \\
+ML-KEM-768 & Encapsulation & 33.62~$\mu$s & [32.89; 34.95] \\
+ML-KEM-768 & Decapsulation & 38.55~$\mu$s & [37.65; 40.11] \\
+ML-KEM-768 & \textbf{Full round} & \textbf{122.01~$\mu$s} & [119.32; 126.96] \\
+OPRF & Blinding & 56.16~$\mu$s & [54.37; 59.36] \\
+OPRF & Server evaluation & 47.59~$\mu$s & [44.97; 52.45] \\
+OPRF & Finalization & 65.68~$\mu$s & [64.17; 67.89] \\
+HKDF & Extract & 1.32~$\mu$s & [1.312; 1.319] \\
+HKDF & Expand (64~bytes) & 1.21~$\mu$s & [1.181; 1.245] \\
+HMAC-SHA-512 & 256~bytes & 1.61~$\mu$s & [1.596; 1.641] \\
+XSalsa20-Poly1305 & Encrypt 96~bytes & 440.79~ns & [430.20; 459.46] \\
+XSalsa20-Poly1305 & Decrypt 96~bytes & 613.42~ns & [594.15; 636.12] \\
+Argon2id & \textbf{MODERATE} & \textbf{510.86~ms} & [490.31; 533.80] \\
+Hybrid combiner & HKDF-Extract (160~bytes) & 1.48~$\mu$s & [1.453; 1.508] \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+The micro-benchmarks reveal three stable relationships. First, the full
+ML-KEM-768 round ($122.01~\mu$s) and 4DH
+($\approx 164~\mu$s) lie in the same order of magnitude, so the
+post-quantum layer does not alter the computational class of the
+protocol. Second, Argon2id ($510.86$~ms in isolated measurement)
+dominates all other components and determines the perceived
+authentication latency. Third, the hybrid key-extraction procedure
+($1.48~\mu$s) is negligible relative to the KSF and does not
+constitute a separate bottleneck.
+
+\subsection{Protocol-Level Benchmarks}
+
+\begin{table}[htbp]
+\caption{Benchmark results for protocol-level scenarios}
+\label{tab:protocol-bench}
+\centering\scriptsize
+\begin{tabularx}{\textwidth}{@{}L{2cm}L{3.8cm}rrX@{}}
+\toprule
+Phase & Measurement scenario & $\hat{\mu}$ & 95\% CI & Dominant component \\
+\midrule
+Registration & Registration-request creation & 72.46~$\mu$s & [72.15; 72.77] & OPRF blinding \\
+Registration & Server-response creation & 45.92~$\mu$s & [45.72; 46.16] & OPRF evaluation \\
+Registration & Registration completion & \textbf{479.58~ms} & [472.11; 487.75] & \textbf{Argon2id} \\
+Authentication & KE1 generation & 118.83~$\mu$s & [116.59; 121.76] & OPRF + ML-KEM key generation \\
+Authentication & KE2 generation & 297.03~$\mu$s & [294.81; 299.69] & 4DH + ML-KEM encapsulation \\
+Authentication & KE3 generation at the initiator & \textbf{492.34~ms} & [478.95; 509.96] & \textbf{Argon2id} + ML-KEM decapsulation \\
+Authentication & Final responder verification & 1.24~$\mu$s & [1.174; 1.323] & MAC verification \\
+\midrule
+Full & End-to-end authentication cycle & \textbf{481.43~ms} & [471.73; 495.25] & \textbf{Argon2id} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The values in Table~\ref{tab:protocol-bench} are not additive: isolated
+KE3 generation and the complete authentication scenario were measured in
+separate benchmark runs with different state-initialization
+configurations.
+Consequently, the mean for the full cycle may be slightly lower than
+the mean for the isolated phase, while the 95\% confidence intervals
+substantially overlap. These measurements should therefore be
+interpreted in terms of dominant components rather than direct
+phase-by-phase summation: server-side KE2 generation remains a
+sub-millisecond operation, whereas Argon2id contributes the
+overwhelming share of time.
+
+\subsection{Key Quantitative Findings and Implementation Implications}
+
+The isolated server profile shows that the responder's cryptographic
+core remains compatible with high-throughput deployment:
+isolated KE2 generation takes 254.26~$\mu$s, whereas final responder
+verification takes only 760.82~ns. This yields a theoretical upper
+bound of approximately $3.92 \times 10^3$ authentications per second
+per core for a cryptography-bound server, excluding database access,
+telemetry, and business logic.
+
+For the complete AKE without the KSF, the post-quantum component adds
+159.3~$\mu$s ($+30.1\%$) of CPU time; against the Argon2id background,
+however, this excess shrinks to approximately $0.03\%$ of a typical
+end-to-end scenario. The principal trade-off is therefore not
+CPU cost but network volume: the complete handshake occupies
+2715~bytes in wire format, that is, 2272~bytes more than the classical
+variant at unchanged round complexity.
+
+\paragraph{Comparative claim relative to classical OPAQUE.}
+Let $R_{\mathrm{opq}}, C_{\mathrm{opq}}, W_{\mathrm{opq}}$ denote,
+respectively, the round, computational, and communication complexity of
+canonical 3DH-OPAQUE without the KSF, and let
+$R_{\mathrm{hyb}}, C_{\mathrm{hyb}}, W_{\mathrm{hyb}}$ denote the
+corresponding quantities for Hybrid PQ-OPAQUE. Then
+\[
+  \begin{aligned}
+    R_{\mathrm{hyb}} &= R_{\mathrm{opq}} = 3 \text{ messages}
+      = 1.5 \text{ rounds},\\
+    C_{\mathrm{hyb}} &= C_{\mathrm{opq}} + C_{\mathrm{1DH}} +
+      C_{\mathrm{KEM}} + O(1),\\
+    W_{\mathrm{hyb}} &= W_{\mathrm{opq}} + \Delta W,\qquad
+      \Delta W = 2272~\text{bytes}.
+  \end{aligned}
+\]
+On the benchmark platform, this corresponds to a measured increase of
+$C_{\mathrm{1DH}} + C_{\mathrm{KEM}} \approx 159.3~\mu$s without the
+KSF. Compared with the established baseline of classical OPAQUE, the
+cost for honest parties rises only additively and remains
+fixed-round, whereas within the present threat model the condition for explicit
+compromise of the final key material becomes stronger: it is no longer
+reducible to weakening the classical contribution alone, but is instead
+interpreted as requiring simultaneous neutralization of the classical
+and post-quantum layers.
+
+\begin{table}[htbp]
+\caption{Comparison of Hybrid PQ-OPAQUE with canonical 3DH-OPAQUE}
+\label{tab:baseline-comparison}
+\centering\scriptsize
+\begin{tabularx}{\textwidth}{@{}L{3.3cm}L{2.9cm}L{3.1cm}X@{}}
+\toprule
+Aspect & 3DH-OPAQUE & Hybrid PQ-OPAQUE & Interpretation \\
+\midrule
+Round complexity & 3 messages, 1.5 rounds & 3 messages, 1.5 rounds & Protocol interaction is not structurally complicated \\
+Computational complexity for honest parties & Baseline 3DH path & $+1$ additional DH, $+$ KEM, $+O(1)$ & The increase is additive rather than structural \\
+Communication complexity & Baseline handshake volume & $+2272$ bytes in wire format & The principal practical trade-off shifts to transport \\
+Key-compromise condition & Weakening of the classical contribution & Simultaneous neutralization of the classical and PQ layers & The attack condition becomes structurally stronger within the present threat model \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ============================================================
+\section{Discussion of Results}
+% ============================================================
+
+\subsection{Interpretation of the Formal and Experimental Evidence}
+
+Within the adopted threat model, the results support the main design
+objectives, but with different degrees of formality. The inherited
+aPAKE properties, the inclusion of the post-quantum material in the
+transcript and key schedule, and the implementability of the
+construction are supported jointly by symbolic models, tests, and
+measurements. The AND-style interpretation is the most qualified part
+of the argument, because it rests on the combiner rationale and the
+surrogate Tamarin model rather than on a computational proof.
+
+The full claim set is distributed across tools. ProVerif addresses
+secrecy and correspondence, Tamarin addresses stateful properties such
+as forward secrecy and the combiner interpretation, and Rust tests
+address implementation failures outside the scope of symbolic models,
+including serialization defects, state-lifecycle errors, boundary
+checking, and FFI-contract behavior.
+
+\subsection{Performance, KSF Parameters, and the Trust Boundary}
+
+The performance profile is dominated by Argon2id; ML-KEM-768 and 4DH
+remain sub-millisecond components. The practical deployment question is
+therefore not the absolute cost of ML-KEM-768, but the choice of KSF
+profile for the target client population. The selected profile is
+appropriate for web and B2B settings, whereas mobile and edge
+deployments may require separate KSF calibration and stricter rate
+limiting.
+
+The trust boundary around $\sigoprf$ is critical. Resistance to offline
+guessing is claimed only for database compromise \emph{without}
+compromise of that secret. In operational terms, $\sigoprf$ functions as the
+root cryptographic secret of the service and requires separated
+storage, segregated access, minimal memory residency, and a strict
+rotation policy.
+
+A practical advantage of the migration path is that the
+post-quantum component remains ephemeral and does not enlarge the
+registration record. Migration is concentrated in the application-layer
+authentication logic, version negotiation, and contextual binding of
+$\acct$. The growth of the wire format to 2715~bytes, however, makes
+transport constraints more consequential than in classical OPAQUE: for
+TCP/QUIC this is largely a buffering issue, whereas datagram
+deployments also face fragmentation and MTU concerns.
+
+\subsection{Migration, Compatibility, and Operational Viability}
+
+The construction can be deployed without redesign of the entire
+identity stack for two reasons. First, the registration record does not
+accumulate long-lived post-quantum material, because ML-KEM appears
+only in the ephemeral authentication path. Second, explicit wire-format
+versioning and contextual binding of $\acct$ permit staged rollout
+without invalidating existing user state. For operators, migration is
+therefore closer to controlled protocol evolution than to complete
+credential re-issuance.
+
+Operational compatibility also matters.
+Authentication interacts with login-attempt limits, logging, account
+recovery, anti-fraud analysis, and audit requirements. The
+implementation therefore emphasizes deterministic serialization,
+explicit version checking, and stable FFI boundaries. Failure modes
+should also remain distinguishable: cryptographic failure,
+version-negotiation failure, and transport failure have different
+operational meanings, and collapsing them into a generic failed login
+would obscure diagnosis during deployment.
+Comparable deployment constraints arise in industrial monitoring and
+inspection platforms that combine UAV operation, multimodal imagery,
+and SCADA-linked telemetry~\cite{svystun2025dytam,svystun2024thermal,lysyi2025fire}.
+
+\subsection{Reproducibility and Artifact Transparency}
+
+Reproducibility matters for interpreting a hybrid protocol that
+combines formal models, implementation, and performance measurements.
+The artifact package links a fixed wire format and key schedule to
+symbolic models, executable code, tests, and benchmarks, so that the
+reported claims can be checked against a single protocol description.
+
+This linkage also clarifies the boundary between formal and
+implementation claims. The AND-style interpretation belongs to the
+Tamarin abstraction, whereas parsing correctness, rejection of
+non-canonical points, version handling, and prevention of state reuse
+are properties of the Rust implementation and its test suite. Making
+that separation explicit helps prevent symbolic results from being
+overextended to properties they do not establish.
+
+The resulting artifact package supports independent re-execution of the
+benchmarks, inspection of the verification models, and comparison of the
+written specification with the implementation. For post-quantum
+migration studies, such transparency is methodologically useful because
+it makes both the strengths and the limits of the evidence directly
+inspectable.
+
+\subsection{Validity, Limitations, and Future Directions}
+
+The work has several material limitations. The
+implementation is OPAQUE-like rather than fully conformant to RFC~9807
+and the associated standard interfaces~\cite{ietf-opaque}. The
+symbolic models do not replace a computational proof of the
+implementation code, and the benchmark measurements were obtained on a
+single hardware platform; consequently, absolute microsecond-level
+values should be transferred to other architectures with caution.
+Finally, ML-KEM-768 is a relatively recent standard, so hybridization
+reduces dependence on a single assumption but does not remove the need
+for continued cryptanalysis of the post-quantum layer.
+
+Further development of the work is most naturally directed along four
+lines:
+\begin{enumerate}
+  \item adaptation to RFC~9807 and the associated OPAQUE/OPRF
+        ecosystem;
+  \item formalization of the hybrid extension in a stronger
+        computational or UC setting~\cite{canetti2001};
+  \item investigation of alternative KSF profiles and ML-KEM variants
+        for mobile and IoT scenarios;
+  \item integration of external post-quantum signatures for settings in
+        which non-repudiation is required, without altering the baseline
+        HMAC-based handshake confirmation.
+\end{enumerate}
+
+% ============================================================
+\section{Conclusion}
+% ============================================================
+
+The results show that OPAQUE can be hybridized with ML-KEM-768 without
+increasing the number of protocol messages and with bounded additional
+cost. The proposed construction fixes the wire format, extends the
+transcript with post-quantum and account-binding material, and derives
+key material from a hybrid combiner over 4DH and ML-KEM-768. Within the
+adopted symbolic models, this design preserves the intended augmented
+PAKE properties while strengthening the condition for final-key
+compromise relative to a purely classical exchange.
+
+The verification results support these conclusions at three
+complementary levels. ProVerif confirms secrecy and authentication in
+separate models, Tamarin confirms 8/8 lemmas in the archived surrogate
+4DH model, and the Rust implementation, tests, and benchmarks show that
+the construction can be realized reproducibly. On the benchmark
+platform, end-to-end authentication takes 481.43~ms, Argon2id remains
+the dominant latency component, and the additional cryptographic cost
+of the post-quantum layer is small in processor time but substantial in
+message expansion.
+
+These conclusions are limited to the scope of the paper. The
+implementation is not a full RFC~9807 instantiation, the symbolic
+models do not constitute a computational proof of the code, and the
+dictionary-resistance claim applies only to compromise of the server
+database without compromise of $\sigoprf$. Within those boundaries, the
+paper provides a concrete and reproducible basis for further work on
+post-quantum augmented PAKE.
+
+% ============================================================
+\section*{Acknowledgment}
+% ============================================================
+
+OpenAI Codex was used during manuscript preparation to assist with
+English-language drafting, stylistic revision, and \LaTeX{} editing in
+portions of the abstract, introduction, discussion, conclusion, and
+related connective prose. The system was not used as an authoritative
+source for technical claims. All protocol descriptions, equations,
+references, tables, implementation details, and experimental results
+were independently reviewed, verified, and approved by the author.
+
+% ============================================================
+% The canonical bibliography for the submission PDF is maintained
+% directly in main_jisa.tex so that the document remains self-contained
+% without an external BibTeX step.
+\begin{thebibliography}{99}
+% ============================================================
+
+\bibitem{svystun2025dytam}
+Svystun~S., Scis{\l}o~L., Pawlik~M., Melnychenko~O., Radiuk~P., Savenko~O., Sachenko~A.
+DyTAM: accelerating wind turbine inspections with dynamic UAV trajectory adaptation.
+Energies 18(7) (2025) 1823.
+DOI:~\url{https://doi.org/10.3390/en18071823}.
+
+\bibitem{svystun2024thermal}
+Svystun~S., Melnychenko~O., Radiuk~P., Savenko~O., Sachenko~A., Lysyi~A.
+Thermal and RGB images work better together in wind turbine damage detection.
+International Journal of Computing 23(4) (2024) 526--535.
+DOI:~\url{https://doi.org/10.47839/ijc.23.4.3752}.
+
+\bibitem{lysyi2025fire}
+Lysyi~A., Sachenko~A., Radiuk~P., Lysyi~M., Melnychenko~O., Ishchuk~O., Savenko~O.
+Enhanced fire hazard detection in solar power plants: an integrated UAV, AI, and SCADA-based approach.
+Radioelectronic and Computer Systems (2) (2025) 99--117.
+DOI:~\url{https://doi.org/10.32620/reks.2025.2.06}.
+
+\bibitem{jarecki2018}
+Jarecki~S., Krawczyk~H., Xu~J.
+OPAQUE: an asymmetric PAKE protocol secure against pre-computation attacks.
+In: EUROCRYPT 2018, LNCS~10822, Springer, 2018, pp.~456--486.
+
+\bibitem{bonneau2012}
+Bonneau~J., Herley~C., van~Oorschot~P.\,C., Stajano~F.
+The quest to replace passwords: a framework for comparative evaluation of web authentication schemes.
+In: Proceedings of the IEEE Symposium on Security and Privacy, 2012, pp.~553--567.
+
+\bibitem{florencio2007}
+Florencio~D., Herley~C.
+A large-scale study of web password habits.
+In: Proceedings of the International Conference on World Wide Web, 2007, pp.~657--666.
+
+\bibitem{bellare2000}
+Bellare~M., Pointcheval~D., Rogaway~P.
+Authenticated key exchange secure against dictionary attacks.
+In: EUROCRYPT 2000, LNCS~1807, Springer, 2000, pp.~139--155.
+
+\bibitem{ietf-opaque}
+Bourdrez~D., Krawczyk~H., Lewi~K., Wood~C.\,A.
+The OPAQUE Augmented Password-Authenticated Key Exchange (aPAKE) Protocol.
+IRTF RFC~9807, July~2025.
+URL:~\url{https://www.rfc-editor.org/info/rfc9807}.
+
+\bibitem{shor1994}
+Shor~P.\,W.
+Algorithms for quantum computation: discrete logarithms and factoring.
+In: Proceedings of the IEEE Symposium on Foundations of Computer Science, 1994, pp.~124--134.
+
+\bibitem{bernstein2017}
+Bernstein~D.\,J., Lange~T.
+Post-quantum cryptography.
+Nature 549(7671) (2017) 188--194.
+
+\bibitem{roetteler2017}
+Roetteler~M., Naehrig~M., Svore~K.\,M., Lauter~K.
+Quantum resource estimates for computing elliptic curve discrete logarithms.
+In: ASIACRYPT 2017, LNCS~10625, Springer, 2017, pp.~241--270.
+
+\bibitem{babbush2026}
+Babbush~R., Zalcman~A., Gidney~C., Broughton~M., Khattar~T.,
+Neven~H., Bergamaschi~T., Drake~J., Boneh~D.
+Securing elliptic curve cryptocurrencies against quantum vulnerabilities:
+resource estimates and mitigations.
+Google Quantum AI whitepaper, March~30,~2026.
+URL:~\url{https://quantumai.google/static/site-assets/downloads/cryptocurrency-whitepaper.pdf}.
+
+\bibitem{mosca2018}
+Mosca~M.
+Cybersecurity in an era with quantum computers: will we be ready?
+IEEE Security \& Privacy 16(5) (2018) 38--41.
+
+\bibitem{fips203}
+National Institute of Standards and Technology.
+Module-Lattice-Based Key-Encapsulation Mechanism Standard: FIPS~203.
+2024.
+URL:~\url{https://csrc.nist.gov/pubs/fips/203/final}.
+
+\bibitem{fips204}
+National Institute of Standards and Technology.
+Module-Lattice-Based Digital Signature Standard: FIPS~204.
+2024.
+URL:~\url{https://csrc.nist.gov/pubs/fips/204/final}.
+
+\bibitem{stebila2024}
+Stebila~D., Fluhrer~S., Gueron~S.
+Hybrid key exchange in TLS~1.3.
+IETF Internet-Draft draft-ietf-tls-hybrid-design-16, work in progress, September~2025.
+URL:~\url{https://datatracker.ietf.org/doc/draft-ietf-tls-hybrid-design/}.
+
+\bibitem{brendel2020}
+Brendel~J., Fiedler~R., G\"{u}nther~F., Jacobsen~C., Poettering~B.
+Post-quantum security of the Signal protocol.
+In: SAC 2020, LNCS~12804, Springer, 2020, pp.~567--591.
+
+\bibitem{hulsing2021}
+H\"{u}lsing~A., Ning~K.-C., Schwabe~P., Weber~F., Zimmermann~P.\,R.
+Post-quantum WireGuard.
+In: Proceedings of the IEEE Symposium on Security and Privacy, 2021, pp.~304--321.
+
+\bibitem{boyko2000}
+Boyko~V., MacKenzie~P., Patel~S.
+Provably secure password-authenticated key exchange using Diffie--Hellman.
+In: EUROCRYPT 2000, LNCS~1807, Springer, 2000, pp.~156--171.
+
+\bibitem{bellovin1992}
+Bellovin~S.\,M., Merritt~M.
+Encrypted key exchange: password-based protocols secure against dictionary attacks.
+In: Proceedings of the IEEE Symposium on Security and Privacy, 1992, pp.~72--84.
+
+\bibitem{ladd2023}
+Ladd~W.
+SPAKE2, a password-authenticated key exchange.
+IRTF RFC~9382, September~2023.
+URL:~\url{https://www.rfc-editor.org/info/rfc9382}.
+
+\bibitem{haase2019}
+Haase~B., Labrique~B.
+AuCPace: efficient verifier-based PAKE protocol tailored for the IIoT.
+IACR Transactions on Cryptographic Hardware and Embedded Systems 2019(2) (2019) 1--48.
+
+\bibitem{wu1998}
+Wu~T.
+The Secure Remote Password protocol.
+In: Proceedings of NDSS, 1998, pp.~97--111.
+
+\bibitem{devalence2024}
+de~Valence~H., Grigg~J., Hamburg~M., Lovecruft~I., Tankersley~G.,
+Valsorda~F.
+The ristretto255 and decaf448 groups.
+IRTF RFC~9496, December~2023.
+URL:~\url{https://www.rfc-editor.org/info/rfc9496}.
+
+\bibitem{canetti2001}
+Canetti~R.
+Universally composable security: a new paradigm for cryptographic protocols.
+In: Proceedings of the IEEE Symposium on Foundations of Computer Science, 2001, pp.~136--145.
+
+\bibitem{krawczyk2010}
+Krawczyk~H., Eronen~P.
+HMAC-based Extract-and-Expand Key Derivation Function (HKDF).
+IETF RFC~5869, 2010.
+
+\bibitem{cremers2012}
+Cremers~C., Mauw~S.
+Operational Semantics and Verification of Security Protocols.
+Springer, 2012.
+
+\bibitem{basin2018}
+Basin~D., Cremers~C., Meadows~C.
+Model checking security protocols.
+In: Handbook of Model Checking. Springer, 2018, pp.~727--762.
+
+\bibitem{biryukov2016}
+Biryukov~A., Dinu~D., Khovratovich~D.
+Argon2: new generation of memory-hard functions for password hashing.
+In: Proceedings of IEEE European Symposium on Security and Privacy, 2016, pp.~292--302.
+
+\bibitem{heyer2023}
+Heisler~B.
+Criterion.rs: statistics-driven micro-benchmarking in Rust.
+GitHub repository.
+URL:~\url{https://github.com/bheisler/criterion.rs}.
+
+\bibitem{beguinet2023}
+Esgin~M.\,F., Steinfeld~R., Tairi~E., Xu~J.
+LeOPaRd: towards practical post-quantum oblivious PRFs via interactive lattice problems.
+Cryptology ePrint Archive, Paper~2024/1615, 2024.
+URL:~\url{https://eprint.iacr.org/2024/1615}.
+
+\bibitem{arriaga2024}
+Arriaga~A., Barbosa~M., Jarecki~S., Skrobot~M.
+C'est tr\`es CHIC: a compact password-authenticated key exchange from lattice-based KEM.
+Cryptology ePrint Archive, Paper~2024/308, 2024.
+URL:~\url{https://eprint.iacr.org/2024/308}.
+
+\bibitem{hesse2024}
+Hesse~J., Rosenberg~M.
+PAKE combiners and efficient post-quantum instantiations.
+Cryptology ePrint Archive, Paper~2024/1621, 2024.
+URL:~\url{https://eprint.iacr.org/2024/1621}.
+
+\bibitem{lyu2024uc}
+Lyu~Y., Liu~S., Han~S.
+Universal composable password authenticated key exchange for the post-quantum world.
+In: EUROCRYPT 2024, LNCS~14657, Springer, 2024, pp.~120--150.
+
+\bibitem{lyu2024hybrid}
+Lyu~Y., Liu~S.
+Hybrid password authentication key exchange in the UC framework.
+Cryptology ePrint Archive, Paper~2024/1630, 2024.
+URL:~\url{https://eprint.iacr.org/2024/1630}.
+
+\bibitem{vos2025}
+Vos~J., Jarecki~S., Wood~C.\,A.
+Hybrid Post-Quantum Password Authenticated Key Exchange.
+Individual Internet-Draft draft-vos-cfrg-pqpake-00, April~2025.
+URL:~\url{https://datatracker.ietf.org/doc/draft-vos-cfrg-pqpake/00/}.
+
+\bibitem{castryck2023}
+Castryck~W., Decru~T.
+An efficient key recovery attack on SIDH.
+In: EUROCRYPT 2023, LNCS~14008, Springer, 2023, pp.~423--447.
+
+\end{thebibliography}
+
+\end{document}
