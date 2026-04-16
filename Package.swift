@@ -11,14 +11,13 @@ let package = Package(
     products: [
         .library(
             name: "AuraOPAQUE",
-            targets: ["AuraOPAQUESwift"]
+            targets: ["AuraOPAQUEBinary"]
         )
     ],
     targets: [
         .binaryTarget(
             name: "AuraOPAQUEBinary",
-            url: "https://github.com/oleksandrmelnychenko/aura-security-opaque-rs/releases/download/v2.0.0/AuraOPAQUE.xcframework.zip",
-            checksum: "1d9570eb94989899d55dfe52657ae44118a2d516c9e5a18c9b8ecf56f30946fe"
+            path: "dist/apple/AuraOPAQUE.xcframework"
         ),
         .target(
             name: "AuraOPAQUESwift",
