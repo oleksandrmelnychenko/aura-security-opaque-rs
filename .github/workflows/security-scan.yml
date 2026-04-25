@@ -28,7 +28,10 @@ jobs:
         run: cargo install cargo-audit --locked
       - name: Run cargo audit
         working-directory: rust
-        run: cargo audit --deny warnings
+        # RUSTSEC-2026-0097: unsound path in rand::rng(); this crate uses
+        # rand::rngs::OsRng directly and does not hit the affected API.
+        # Transitive via proptest. Remove once upstream ships a fix.
+        run: cargo audit --deny warnings --ignore RUSTSEC-2026-0097
 
   cargo-deny:
     name: Cargo Deny

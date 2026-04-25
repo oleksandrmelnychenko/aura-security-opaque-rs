@@ -5,7 +5,12 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+# RUSTSEC-2026-0097: "Rand is unsound with a custom logger using rand::rng()".
+# This crate uses rand::rngs::OsRng directly (crypto.rs, pq_kem.rs) and does
+# not call the affected rand::rng() thread-local API, so the advisory does not
+# apply to production code. The transitive dependency comes via proptest.
+# Remove this ignore once proptest (and/or rand) ship a patched release.
+ignore = ["RUSTSEC-2026-0097"]
 
 [licenses]
 version = 2

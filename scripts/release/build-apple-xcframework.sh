@@ -31,9 +31,14 @@ xcodebuild -create-xcframework \
   -library "$RUST_DIR/target/libopaque_ffi_sim.a" -headers "$INCLUDE_DIR" \
   -output "$DIST_DIR/AuraOPAQUE.xcframework"
 
+# Aura Messenger links OPAQUE through @_silgen_name and does not import the
+# packaged C module directly. Dropping the module map avoids an Xcode 26
+# ProcessXCFramework collision when multiple local binary packages ship a
+# top-level module.modulemap into the same derived include directory.
+find "$DIST_DIR/AuraOPAQUE.xcframework" -name module.modulemap -delete
+
 test -f "$DIST_DIR/AuraOPAQUE.xcframework/macos-arm64/Headers/opaque_api.h"
 test -f "$DIST_DIR/AuraOPAQUE.xcframework/macos-arm64/Headers/opaque_relay.h"
-test -f "$DIST_DIR/AuraOPAQUE.xcframework/macos-arm64/Headers/module.modulemap"
 
 (
   cd "$DIST_DIR"

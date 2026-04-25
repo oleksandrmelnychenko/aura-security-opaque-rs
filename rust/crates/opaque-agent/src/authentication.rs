@@ -268,6 +268,7 @@ pub fn initiator_finish(
         return Err(OpaqueError::ValidationError);
     }
     if opaque_core::types::is_all_zero(&state.session_key) {
+        state.invalidate();
         return Err(OpaqueError::InvalidInput);
     }
 

@@ -8,6 +8,7 @@ dist/
 # Swift
 .build/
 swift/.build/
+.swiftpm/
 
 # IDE
 .idea/
@@ -19,6 +20,14 @@ swift/.build/
 # Log files
 *.log
 !formal/logs/*.log
+
+# LaTeX build artifacts
+docs/*.aux
+docs/*.fdb_latexmk
+docs/*.fd
+docs/*.fls
+docs/*.out
+docs/*.spl
 
 # OS
 .DS_Store
