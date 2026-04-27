@@ -17,11 +17,18 @@ cargo build --release --package opaque-ffi --target aarch64-apple-darwin --manif
 cargo build --release --package opaque-ffi --target aarch64-apple-ios --manifest-path "$RUST_DIR/Cargo.toml"
 cargo build --release --package opaque-ffi --target aarch64-apple-ios-sim --manifest-path "$RUST_DIR/Cargo.toml"
 cargo build --release --package opaque-ffi --target x86_64-apple-ios --manifest-path "$RUST_DIR/Cargo.toml"
+cargo build --release --package opaque-ffi --target aarch64-apple-ios-macabi --manifest-path "$RUST_DIR/Cargo.toml"
+cargo build --release --package opaque-ffi --target x86_64-apple-ios-macabi --manifest-path "$RUST_DIR/Cargo.toml"
 
 lipo -create \
   "$RUST_DIR/target/aarch64-apple-ios-sim/release/libopaque_ffi.a" \
   "$RUST_DIR/target/x86_64-apple-ios/release/libopaque_ffi.a" \
   -output "$RUST_DIR/target/libopaque_ffi_sim.a"
+
+lipo -create \
+  "$RUST_DIR/target/aarch64-apple-ios-macabi/release/libopaque_ffi.a" \
+  "$RUST_DIR/target/x86_64-apple-ios-macabi/release/libopaque_ffi.a" \
+  -output "$RUST_DIR/target/libopaque_ffi_maccatalyst.a"
 
 rm -rf "$DIST_DIR/AuraOPAQUE.xcframework" "$DIST_DIR/AuraOPAQUE.xcframework.zip"
 
@@ -29,6 +36,7 @@ xcodebuild -create-xcframework \
   -library "$RUST_DIR/target/aarch64-apple-darwin/release/libopaque_ffi.a" -headers "$INCLUDE_DIR" \
   -library "$RUST_DIR/target/aarch64-apple-ios/release/libopaque_ffi.a" -headers "$INCLUDE_DIR" \
   -library "$RUST_DIR/target/libopaque_ffi_sim.a" -headers "$INCLUDE_DIR" \
+  -library "$RUST_DIR/target/libopaque_ffi_maccatalyst.a" -headers "$INCLUDE_DIR" \
   -output "$DIST_DIR/AuraOPAQUE.xcframework"
 
 # Aura Messenger links OPAQUE through @_silgen_name and does not import the
