@@ -17,7 +17,7 @@ description = "Hybrid PQ-OPAQUE: Post-Quantum Password-Authenticated Key Exchang
 repository = "https://github.com/oleksandrmelnychenko/aura-security-opaque-rs"
 
 [workspace.dependencies]
-ml-kem = { version = "=0.2.3", features = ["zeroize"] }
+ml-kem = { version = "=0.3.2", features = ["zeroize"] }
 curve25519-dalek = { version = "=4.1.3", features = ["rand_core", "zeroize"] }
 sha2 = "=0.10.9"
 hmac = "=0.12.1"
