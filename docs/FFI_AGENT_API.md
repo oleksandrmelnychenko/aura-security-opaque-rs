@@ -28,10 +28,21 @@ for a stable human-readable description of a code.
 |-----:|---------|
 | `0` | Success |
 | `-1` | Invalid input parameter |
+| `-2` | Cryptographic operation failed |
+| `-3` | Invalid protocol message format or length |
+| `-4` | Validation failed |
 | `-5` | Authentication/protocol validation failed |
+| `-6` | Invalid public key |
 | `-7` | Account already registered |
+| `-8` | Malformed ML-KEM key or ciphertext |
+| `-9` | Envelope has invalid format |
+| `-10` | Unsupported protocol version |
 | `-99` | Internal panic (should never happen) |
 | `-100` | Handle is busy (concurrent call rejected) |
+
+Current protocol-stage validation failures are intentionally collapsed to `-5`;
+the distinct public codes remain part of the ABI and `opaque_error_string()`
+contract.
 
 ## Thread Safety
 

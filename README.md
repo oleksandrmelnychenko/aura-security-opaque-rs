@@ -16,9 +16,10 @@ This repository is not just a prototype. It packages:
 - Criterion benchmarks for primitive, protocol, and relay throughput layers;
 - paper-ready documentation of the wire format, threat boundary, and artifact story.
 
-Canonical scientific source: `docs/main.tex`.
-Historical drafts and audit snapshots are kept for traceability, but should
-not be cited as the current source of truth unless explicitly marked otherwise.
+Scientific sources: `docs/main_jisa.tex` is the English JISA-oriented
+manuscript, and `docs/main.tex` is the Ukrainian full manuscript. Historical
+drafts and audit snapshots are kept for traceability, but should not be cited
+as the current source of truth unless explicitly marked otherwise.
 
 ## Why This Work Stands Out
 
@@ -29,8 +30,8 @@ evidence, and symbolic models in one place.
 
 | Dimension | Current evidence |
 |----------|------------------|
-| Implementation | 4 Rust crates, 5335 LOC production code |
-| Tests | 3961 LOC tests, `155 passed; 1 ignored` in workspace |
+| Implementation | 4 Rust crates, 5346 LOC production code |
+| Tests | 4116 LOC tests, `157 passed; 1 ignored` in workspace |
 | Formal models | 1806 LOC across Tamarin + ProVerif artifacts |
 | Benchmarks | Criterion suites for micro, protocol, and throughput layers |
 | Wire protocol | Versioned wire messages: KE1 `1273`, KE2 `1377`, KE3 `65` bytes |
@@ -41,7 +42,7 @@ evidence, and symbolic models in one place.
 If you are evaluating the work as a paper artifact or competition
 submission, start here:
 
-1. Read the paper source in `docs/main.tex`.
+1. Read the English journal manuscript in `docs/main_jisa.tex`.
 2. Read `docs/ARTIFACT_GUIDE.md` for a claim-to-evidence map.
 3. Run `cargo test --workspace` in `rust/`.
 4. Inspect `formal/logs/` and `formal/README.md` for the symbolic boundary.
@@ -69,7 +70,8 @@ Security claims are intentionally scoped to the implemented trust boundary:
 
 | Need | Where to look |
 |------|---------------|
-| Paper / scientific narrative | `docs/main.tex` |
+| English journal manuscript | `docs/main_jisa.tex` |
+| Ukrainian full manuscript | `docs/main.tex` |
 | Historical markdown draft | `docs/SCIENTIFIC_PAPER_REVISED.md` (archival, non-canonical) |
 | Presentation / defense flow | `docs/PRESENTATION_OUTLINE.md` |
 | Wire format and versioning | `docs/WIRE_PROTOCOL_VERSIONING.md` |

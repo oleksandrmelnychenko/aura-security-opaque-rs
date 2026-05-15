@@ -2,9 +2,10 @@
 
 **Tool:** Tamarin Prover 1.10.0 (Maude 3.4)
 **Model:** `formal/hybrid_pq_opaque_verified.spthy`
-**Protocol:** Hybrid PQ-OPAQUE (3DH Ristretto255 + ML-KEM-768)
-**Date:** 2026-02-22
-**Processing time:** 22.83 seconds
+**Protocol:** Hybrid PQ-OPAQUE (4DH Ristretto255 + ML-KEM-768)
+**Date:** 2026-05-14
+**Processing time:** 53.84 seconds
+**Log:** `formal/logs/tamarin_verified_4dh_20260514_190344.log`
 
 ---
 
@@ -12,7 +13,7 @@
 
 Hybrid PQ-OPAQUE is a password-authenticated key exchange (PAKE) protocol with post-quantum security. It combines:
 
-- **3DH (Triple Diffie-Hellman)** over Ristretto255 — classical key agreement
+- **4DH over Ristretto255** — classical key agreement
 - **ML-KEM-768 (CRYSTALS-Kyber)** — post-quantum KEM
 - **OPRF (Oblivious PRF)** — password blinding
 - **Argon2id** — memory-hard password stretching
@@ -34,11 +35,11 @@ Agent                                      Relay
   |                                          |  Store: envelope, pkAgent, OPRF key
   |                                          |
   |--- KE1: pk(ek), nonce, kem_pk(ksk) --->|
-  |                                          |  Compute: 3DH + KEM ss + session key
+  |                                          |  Compute: 4DH + KEM ss + session key
   |<-- KE2: pk(es), env, MAC_relay, ct ----|
   |  Open envelope (pwd → OPRF → Argon2id)  |
   |  Verify MAC_relay                        |
-  |  Compute: 3DH + KEM ss + session key    |
+  |  Compute: 4DH + KEM ss + session key    |
   |--- KE3: MAC_agent --------------------->|
   |                                          |  Verify MAC_agent
   |  [Session key established]               |  [Session key established]
@@ -50,9 +51,10 @@ Agent                                      Relay
 dh1 = DH(skAgent, pkRelay)       // agent static × relay static
 dh2 = DH(ekAgent, pkRelay)       // agent ephemeral × relay static
 dh3 = DH(skAgent, pk(ekRelay))   // agent static × relay ephemeral
+dh4 = DH(ekAgent, pk(ekRelay))   // agent ephemeral × relay ephemeral
 kem_ss = KEM.Decaps(ksk, ct)     // ML-KEM-768 shared secret
 
-session_key = KDF(combine(dh1, dh2, dh3, kem_ss), transcript_hash)
+session_key = KDF(combine(dh1, dh2, dh3, dh4, kem_ss), transcript_hash)
 ```
 
 ---
@@ -66,7 +68,7 @@ Standard Tamarin models using `builtins: diffie-hellman` suffer from exponential
 **Key insight:** In the Dolev-Yao model, the DH shared secret `dh(a, pk(b))` is unknown to the adversary unless BOTH private keys are compromised. We model this directly:
 
 ```
-dh_secret = h(<'3dh', skAgent, skRelay, ekAgent, ekRelay>)
+dh_secret = h(<'4dh', skAgent, skRelay, ekAgent, ekRelay>)
 ```
 
 Both parties access each other's private keys through persistent facts (`!Cred`, `!Sk`), abstracting the DH computation while preserving the adversary's knowledge constraints.
@@ -89,7 +91,7 @@ kem_decaps(sk, kem_encaps(kem_pk(sk), r)) = kem_ss(kem_pk(sk), r)  // KEM
 | `kdf(ikm, info)` | 2 | Key derivation |
 | `mac(key, msg)` | 2 | Message authentication code |
 | `kem_pk(sk)` / `kem_encaps(pk, r)` / `kem_decaps(sk, ct)` / `kem_ss(pk, r)` | 1-2 | KEM operations |
-| `combine(dh1, dh2, dh3, kem_ss)` | 4 | AND-model hybrid combiner |
+| `combine(dh1, dh2, dh3, dh4, kem_ss)` | 5 | AND-model hybrid combiner |
 
 ### 2.4 Corruption Model
 
@@ -109,7 +111,7 @@ kem_decaps(sk, kem_encaps(kem_pk(sk), r)) = kem_ss(kem_pk(sk), r)  // KEM
 
 ```
 analyzed: hybrid_pq_opaque_verified.spthy
-processing time: 22.83s
+processing time: 53.84s
 
 session_key_secrecy   (all-traces): verified (27 steps)
 password_secrecy      (all-traces): verified (3 steps)
@@ -137,7 +139,7 @@ ALL 8 LEMMAS VERIFIED.
 
 **Result:** **VERIFIED** (27 steps)
 
-**Proof sketch:** The adversary needs `combine(dh_secret, ..., kem_ss)` to derive the session key. Computing `dh_secret = h(<'3dh', skA, skR, ekA, ekR>)` requires the agent's private key `skA` (only obtainable via `CorruptC` → contradicts `¬CLtk(C)`) and the relay's private key `skR` (only via `CorruptS` → contradicts `¬CLtk(S)`).
+**Proof sketch:** The adversary needs `combine(dh_secret, dh_secret, dh_secret, dh_secret, kem_ss)` to derive the session key. Computing `dh_secret = h(<'4dh', skA, skR, ekA, ekR>)` requires the agent's private key `skA` (only obtainable via `CorruptC` -> contradicts `¬CLtk(C)`) and the relay's private key `skR` (only via `CorruptS` -> contradicts `¬CLtk(S)`).
 
 ---
 
@@ -170,7 +172,7 @@ ALL 8 LEMMAS VERIFIED.
 
 **Result:** **VERIFIED** (119 steps)
 
-**Proof sketch:** Post-session compromise reveals `skA` and `skR`, but ephemeral keys `~ek` (agent DH) and `~es` (relay DH) are fresh nonces that are never output to `Out()`. Without `RevEph`, `!KU(~ek)` fails in all 119 case branches. The adversary cannot reconstruct `h(<'3dh', skA, skR, ~ek, ~es>)`.
+**Proof sketch:** Post-session compromise reveals `skA` and `skR`, but ephemeral keys `~ek` (agent DH) and `~es` (relay DH) are fresh nonces that are never output to `Out()`. Without `RevEph`, `!KU(~ek)` fails in all 119 case branches. The adversary cannot reconstruct `h(<'4dh', skA, skR, ~ek, ~es>)`.
 
 ---
 
@@ -221,7 +223,7 @@ ALL 8 LEMMAS VERIFIED.
 
 **Result:** **VERIFIED** (29 steps)
 
-**Proof sketch:** The adversary may know `skA` and `skR` via `CorruptC` + `CorruptS`, but without `RevEph`, ephemeral keys `~ek`, `~ksk`, `~es`, `~kr` remain unknown. The adversary needs `~ek` to compute `h(<'3dh', skA, skR, ~ek, ekR>)`, but `!KU(~ek)` fails — `~ek` is only in `C1()` state facts and `Out(pk(~ek))`, not `Out(~ek)`.
+**Proof sketch:** The adversary may know `skA` and `skR` via `CorruptC` + `CorruptS`, but without `RevEph`, ephemeral keys `~ek`, `~ksk`, `~es`, `~kr` remain unknown. The adversary needs `~ek` to compute `h(<'4dh', skA, skR, ~ek, ekR>)`, but `!KU(~ek)` fails -- `~ek` is only in `C1()` state facts and `Out(pk(~ek))`, not `Out(~ek)`.
 
 **Why this proves AND-model:** `RevEph` reveals BOTH the DH ephemeral key AND the KEM ephemeral key. Disallowing `RevEph` while allowing `CLtk` means: classical DH can be partially broken (LTKs known, but not ephemerals), and KEM is intact. The session key is still safe. Conversely, if the adversary broke KEM but not DH ephemerals, they would need the DH secret which still requires ephemeral keys. Only breaking BOTH (which would require `RevEph` + `CLtk`) enables recovery.
 
@@ -274,9 +276,9 @@ Rules KE2 and KE3 pattern-match on `pk()` in `In()` facts:
 - KE2: `In(<pk(ekC_from_wire), nc, kpk>)` — extracts `ekC_from_wire`
 - KE3: `In(<ns, pk(ekS_from_wire), ...>)` — extracts `ekS_from_wire`
 
-This is intentional. In the abstract DH model, the relay/agent needs the other party's ephemeral private key to compute the shared secret. Pattern matching on `pk()` is the mechanism for this. Since `pk()` is a one-way function, the adversary cannot exploit this — they can only provide `pk(x)` for known `x`, but `x` itself is already in their knowledge.
+This is intentional in the surrogate DH model. The relay/agent needs the other party's ephemeral witness to form the abstract shared secret, and pattern matching on `pk()` is the chosen modeling mechanism. Since `pk()` is modeled as one-way, the adversary can only provide `pk(x)` for known `x`, in which case `x` is already in adversary knowledge.
 
-**Both warnings are benign and do not affect proof soundness.**
+These warnings are recorded as modeling assumptions for the surrogate proof, not hidden as implementation evidence.
 
 ---
 
@@ -284,8 +286,8 @@ This is intentional. In the abstract DH model, the relay/agent needs the other p
 
 | Aspect | Full Model (`hybrid_pq_opaque.spthy`) | Verified Model (`hybrid_pq_opaque_verified.spthy`) |
 |--------|--------------------------------------|-----------------------------------------------------|
-| DH Theory | `builtins: diffie-hellman` | Abstract: `h(<'3dh', skA, skR, ekA, ekR>)` |
-| Proof Search | Timeout (>15 min/lemma) | **22.83s total** (all 8 lemmas) |
+| DH Theory | `builtins: diffie-hellman` | Abstract: `h(<'4dh', skA, skR, ekA, ekR>)` |
+| Proof Search | Timeout (>15 min/lemma) | **53.84s total** (all 8 lemmas) |
 | Lemmas | 9 (unverified) | **8 (all verified)** |
 | Adversary Model | Full symbolic DH | Sound abstraction |
 | KEM | Equational | Equational (same) |
@@ -307,11 +309,11 @@ MSYS_NO_PATHCONV=1 docker run --rm \
   lmandrelli/tamarin-prover:1.10.0 \
   tamarin-prover --prove /workspace/hybrid_pq_opaque_verified.spthy
 
-# Expected output: 8/8 lemmas verified, ~23 seconds
+# Expected output: 8/8 lemmas verified, about 54 seconds on the archived run
 ```
 
 ---
 
-*Report generated: 2026-02-22*
+*Report generated: 2026-05-14*
 *Aura Security — Hybrid PQ-OPAQUE Protocol*
-*Tamarin Prover 1.10.0 — 8/8 lemmas verified in 22.83s*
+*Tamarin Prover 1.10.0 — 8/8 lemmas verified in 53.84s*

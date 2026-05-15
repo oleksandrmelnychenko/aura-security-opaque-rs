@@ -1,7 +1,7 @@
 # Formal Verification Report — Hybrid PQ-OPAQUE Protocol
 
 **Protocol:** Hybrid PQ-OPAQUE (4DH Ristretto255 + ML-KEM-768)
-**Date:** 2026-02-22
+**Date:** 2026-05-14
 **Author:** Aura Security
 
 ---
@@ -140,17 +140,17 @@ RESULT inj-event(ServerCompletesAuth(pkS_1,pkC_2,sk))
 
 **Tool:** Tamarin Prover 1.10.0 (Maude 3.4)
 **Model:** `formal/hybrid_pq_opaque_verified.spthy`
-**Log:** `formal/logs/tamarin_full_proof.log`
-**Processing time:** 22.83 seconds
+**Log:** `formal/logs/tamarin_verified_4dh_20260514_190344.log`
+**Processing time:** 53.84 seconds
 
 ### 4.1 Model Design
 
 The Tamarin model uses an abstract DH representation to avoid the exponential state-space blowup caused by Tamarin's `builtins: diffie-hellman` equational theory:
 
-**Key insight:** In the Dolev-Yao model, a DH shared secret `dh(a, pk(b))` is unknown to the adversary unless BOTH private keys `a` and `b` are compromised. We model the 3DH shared secret directly as:
+**Key insight:** In the Dolev-Yao model, a DH shared secret `dh(a, pk(b))` is unknown to the adversary unless BOTH private keys `a` and `b` are compromised. We model the 4DH shared secret directly as:
 
 ```
-dh_secret = h(<'3dh', skAgent, skRelay, ekAgent, ekRelay>)
+dh_secret = h(<'4dh', skAgent, skRelay, ekAgent, ekRelay>)
 ```
 
 Both the agent and the relay access each other's private keys through persistent facts (`!Cred`, `!Sk`) — abstracting the DH computation while preserving the adversary's knowledge constraints.
@@ -159,7 +159,7 @@ Both the agent and the relay access each other's private keys through persistent
 
 | Primitive | Tamarin Model |
 |-----------|---------------|
-| Ristretto255 3DH | `h(<'3dh', skA, skR, ekA, ekR>)` via shared-state |
+| Ristretto255 4DH | `h(<'4dh', skA, skR, ekA, ekR>)` via shared-state |
 | ML-KEM-768 Encapsulate | `kem_encaps(kem_pk(sk), r)` |
 | ML-KEM-768 Decapsulate | `kem_decaps(sk, kem_encaps(kem_pk(sk), r)) = kem_ss(kem_pk(sk), r)` |
 | OPRF | `oprf(pwd, key)` |
@@ -167,7 +167,7 @@ Both the agent and the relay access each other's private keys through persistent
 | AEAD (Envelope) | `adec(k, n, aenc(k, n, m)) = m` |
 | HKDF | `kdf(ikm, info)` |
 | HMAC | `mac(key, msg)` |
-| Hybrid Combine | `combine(dh1, dh2, dh3, kem_ss)` — AND-model |
+| Hybrid Combine | `combine(dh1, dh2, dh3, dh4, kem_ss)` — AND-model |
 
 ### 4.3 Protocol Rules
 
@@ -202,7 +202,7 @@ Both the agent and the relay access each other's private keys through persistent
 
 **Result:** verified (27 steps)
 
-**Proof structure:** Tamarin attempts to construct the session key from adversary knowledge. To compute `combine(dh_secret, dh_secret, dh_secret, kem_ss)`, the adversary needs `h(<'3dh', skA, skR, ekA, ekR>)`, which requires `skA` (only from `CorruptC` — contradicts `¬CLtk(C)`) AND `skR` (only from `CorruptS` — contradicts `¬CLtk(S)`). All branches close by contradiction.
+**Proof structure:** Tamarin attempts to construct the session key from adversary knowledge. To compute `combine(dh_secret, dh_secret, dh_secret, dh_secret, kem_ss)`, the adversary needs `h(<'4dh', skA, skR, ekA, ekR>)`, which requires `skA` (only from `CorruptC` -- contradicts `¬CLtk(C)`) AND `skR` (only from `CorruptS` -- contradicts `¬CLtk(S)`). All branches close by contradiction.
 
 ---
 
@@ -228,7 +228,7 @@ Both the agent and the relay access each other's private keys through persistent
 
 **Result:** verified (119 steps)
 
-**Proof structure:** Both long-term keys are compromised, but AFTER the session completes. The adversary obtains `skA` and `skR`, but the ephemeral keys `~ek` and `~es` are fresh nonces that are never output (except via `RevEph`, which is not used in this lemma). The adversary cannot compute `h(<'3dh', skA, skR, ~ek, ~es>)` because `!KU(~ek)` fails — `~ek` was only placed in `C1()` state fact and `Out(pk(~ek))`, but not in `Out(~ek)`. All 119 case splits close with `by solve(!KU(~ek))`.
+**Proof structure:** Both long-term keys are compromised, but AFTER the session completes. The adversary obtains `skA` and `skR`, but the ephemeral keys `~ek` and `~es` are fresh nonces that are never output (except via `RevEph`, which is not used in this lemma). The adversary cannot compute `h(<'4dh', skA, skR, ~ek, ~es>)` because `!KU(~ek)` fails -- `~ek` was only placed in `C1()` state fact and `Out(pk(~ek))`, but not in `Out(~ek)`. All 119 case splits close with `by solve(!KU(~ek))`.
 
 ---
 
@@ -270,7 +270,7 @@ Both the agent and the relay access each other's private keys through persistent
 
 **Result:** verified (29 steps)
 
-**Proof structure:** This lemma allows long-term key compromise (`CLtk` is not restricted) but disallows ephemeral key reveal. The adversary may know `skA` and `skR` (via `CorruptC`, `CorruptS`) but still cannot derive the session key because ephemeral keys `~ek` and `~ksk` (agent) and `~es` and `~kr` (relay) are never output without `RevEph`. The adversary needs ALL four components of the 3DH secret AND the KEM shared secret. Without ephemeral keys, `!KU(~ek)` fails.
+**Proof structure:** This lemma allows long-term key compromise (`CLtk` is not restricted) but disallows ephemeral key reveal. The adversary may know `skA` and `skR` (via `CorruptC`, `CorruptS`) but still cannot derive the session key because ephemeral keys `~ek` and `~ksk` (agent) and `~es` and `~kr` (relay) are never output without `RevEph`. The adversary needs the 4DH classical secret and the KEM shared secret. Without ephemeral keys, `!KU(~ek)` fails.
 
 This proves the **AND-model**: compromising EITHER the classical DH layer (requires ephemeral keys) OR the KEM layer (requires KEM secret key) is insufficient — BOTH must be broken simultaneously.
 
@@ -364,8 +364,8 @@ The Tamarin output includes 2 wellformedness warnings:
 |------|-----------|--------|
 | ProVerif 2.05 | 5 queries | **5/5 true** |
 | Tamarin 1.10.0 | 8 lemmas | **8/8 verified** |
-| Rust (deterministic) | 35 tests | **34/34 pass** (1 combined) |
-| Rust (proptest) | 5 properties | **5/5 pass** |
+| Rust workspace | 158 tests | **157 passed, 1 ignored** |
+| Rust proptest subset | 5 properties | **5/5 pass** |
 | **Total** | **All 7 security properties** | **Fully verified** |
 
 ---
@@ -387,7 +387,7 @@ Rust:       cargo test (curve25519-dalek, ml-kem, argon2, hmac, sha2, crypto_sec
 The full model (`formal/hybrid_pq_opaque.spthy`) uses `builtins: diffie-hellman` which causes exponential state-space blowup in Tamarin's constraint solver — DH exponentiation generates unbounded case splits. Multiple heuristics were attempted (`--heuristic=S`, `--heuristic=o`, `--auto-sources`), all timing out after 15+ minutes per lemma.
 
 The verified model (`formal/hybrid_pq_opaque_verified.spthy`) uses an abstract DH representation:
-- **DH shared secret** = `h(<'3dh', skAgent, skRelay, ekAgent, ekRelay>)` — a hash of all 4 private keys
+- **DH shared secret** = `h(<'4dh', skAgent, skRelay, ekAgent, ekRelay>)` -- a hash of all 4 private keys
 - Both parties access the required private keys through **persistent shared facts** (`!Cred`, `!Sk`)
 - The adversary can only learn private keys through explicit corruption rules
 - This abstraction is **sound** because in the Dolev-Yao model, the DH shared secret is a deterministic function of the private keys, and the adversary's ability to compute it depends solely on knowing those keys
@@ -398,10 +398,10 @@ The full model with LTK compromise causes exponential blowup in correspondence q
 
 ### Soundness of Abstract DH
 
-The abstract DH model correctly captures the essential security property: the adversary cannot compute the 3DH shared secret without knowing ALL participating private keys. This is precisely the Decisional Diffie-Hellman (DDH) assumption in symbolic form. The model is a sound over-approximation — any attack found in the abstract model would also apply to the concrete DH instantiation.
+The abstract DH model captures the essential security property used in the surrogate proof: the adversary cannot compute the modeled 4DH shared secret without knowing all participating private keys. This is the symbolic abstraction used for the Ristretto255 component; any attack found in the abstract model would indicate a corresponding problem in the concrete DH instantiation.
 
 ---
 
-*Report generated: 2026-02-22*
+*Report generated: 2026-05-14*
 *Aura Security — Hybrid PQ-OPAQUE Protocol*
-*All 7 security properties formally verified across 2 independent symbolic verifiers + 39 computational tests*
+*ProVerif 5/5 queries, Tamarin 8/8 lemmas, Rust workspace 157 passed / 1 ignored*

@@ -1,0 +1,1581 @@
+theory Hybrid_PQ_OPAQUE_Verified begin
+
+// Function signature and definition of the equational theory E
+
+functions: adec/3, aenc/3, argon2id/2, combine/5, fst/1, h/1, kdf/2,
+           kem_decaps/2, kem_encaps/2, kem_pk/1, kem_ss/2, mac/2, oprf/2, pair/2,
+           pk/1, sdec/2, senc/2, snd/1
+equations:
+    adec(k, n, aenc(k, n, m)) = m,
+    fst(<x.1, x.2>) = x.1,
+    kem_decaps(sk, kem_encaps(kem_pk(sk), r)) = kem_ss(kem_pk(sk), r),
+    sdec(senc(x.1, x.2), x.2) = x.1,
+    snd(<x.1, x.2>) = x.2
+
+
+
+
+
+
+
+
+
+rule (modulo E) Setup:
+   [ Fr( ~sk ) ] --> [ !Sk( $A, ~sk ), Out( pk(~sk) ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Register:
+   [ Fr( ~pwd ), Fr( ~ok ), Fr( ~skC ), Fr( ~n ), !Sk( $S, skS ) ]
+  --[ PwdGen( $C, ~pwd ) ]->
+   [
+   !Cred( $C, ~pwd, ~skC, pk(~skC) ), !Oprf( $S, $C, ~ok ),
+   !Rec( $S, $C,
+         aenc(h(<'envelope_key', argon2id(oprf(~pwd, ~ok), ~pwd), pk(skS)>), ~n,
+              ~skC),
+         ~n, pk(~skC), ~pwd
+   ),
+   Out( <
+         aenc(h(<'envelope_key', argon2id(oprf(~pwd, ~ok), ~pwd), pk(skS)>), ~n,
+              ~skC),
+         ~n, pk(~skC)>
+   )
+   ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) KE1:
+   [
+   !Cred( $C, pwd, skC, pkC ), !Sk( $S, skS ), Fr( ~ek ), Fr( ~nc ),
+   Fr( ~ksk )
+   ]
+  --[ Start( $C, $S ) ]->
+   [
+   C1( $C, $S, pwd, skC, pkC, ~ek, ~ksk, ~nc, skS ),
+   Out( <pk(~ek), ~nc, kem_pk(~ksk)> )
+   ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) KE2:
+   [
+   In( <pk(ekC_from_wire), nc, kpk> ), !Sk( $S, skS ), !Oprf( $S, $C, ok ),
+   !Rec( $S, $C, env, envn, pkC, pwd ), !Cred( $C, pwd, skC_from_rec, pkC ),
+   Fr( ~es ), Fr( ~ns ), Fr( ~kr )
+   ]
+  --[
+  SrvKE2( $S, $C,
+          kdf(combine(h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                      h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                      h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                      h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>), kem_ss(kpk, ~kr)),
+              h(<'tr', pk(ekC_from_wire), pk(~es), nc, ~ns, pkC, pk(skS), env, envn,
+                 kpk, kem_encaps(kpk, ~kr)>))
+  ),
+  RunR( $S, $C,
+        kdf(combine(h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                    h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                    h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                    h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>), kem_ss(kpk, ~kr)),
+            h(<'tr', pk(ekC_from_wire), pk(~es), nc, ~ns, pkC, pk(skS), env, envn,
+               kpk, kem_encaps(kpk, ~kr)>)),
+        h(<'tr', pk(ekC_from_wire), pk(~es), nc, ~ns, pkC, pk(skS), env, envn,
+           kpk, kem_encaps(kpk, ~kr)>)
+  ),
+  UsedEphS( $S, ~es, ~kr )
+  ]->
+   [
+   S1( $S, $C,
+       kdf(combine(h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                   h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                   h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                   h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>), kem_ss(kpk, ~kr)),
+           h(<'tr', pk(ekC_from_wire), pk(~es), nc, ~ns, pkC, pk(skS), env, envn,
+              kpk, kem_encaps(kpk, ~kr)>)),
+       kdf(kdf(combine(h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                       h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                       h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                       h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>), kem_ss(kpk, ~kr)),
+               h(<'tr', pk(ekC_from_wire), pk(~es), nc, ~ns, pkC, pk(skS), env, envn,
+                  kpk, kem_encaps(kpk, ~kr)>)),
+           'imac'),
+       h(<'tr', pk(ekC_from_wire), pk(~es), nc, ~ns, pkC, pk(skS), env, envn,
+          kpk, kem_encaps(kpk, ~kr)>),
+       ~es, ~kr
+   ),
+   Out( <~ns, pk(~es), env, envn,
+         mac(kdf(kdf(combine(h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                             h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                             h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>),
+                             h(<'4dh', skC_from_rec, skS, ekC_from_wire, ~es>), kem_ss(kpk, ~kr)),
+                     h(<'tr', pk(ekC_from_wire), pk(~es), nc, ~ns, pkC, pk(skS), env, envn,
+                        kpk, kem_encaps(kpk, ~kr)>)),
+                 'rmac'),
+             h(<'tr', pk(ekC_from_wire), pk(~es), nc, ~ns, pkC, pk(skS), env, envn,
+                kpk, kem_encaps(kpk, ~kr)>)),
+         kem_encaps(kpk, ~kr), oprf(pwd, ok)>
+   )
+   ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) KE3:
+   [
+   C1( $C, $S, pwd, skC, pkC, ek, ksk, nc, skS ),
+   In( <ns, pk(ekS_from_wire), env, envn, rmac, ct, ov> )
+   ]
+  --[
+  Eq( rmac,
+      mac(kdf(kdf(combine(h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                          h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                          h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                          h(<'4dh', skC, skS, ek, ekS_from_wire>), kem_decaps(ksk, ct)),
+                  h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+                     kem_pk(ksk), ct>)),
+              'rmac'),
+          h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+             kem_pk(ksk), ct>))
+  ),
+  Eq( adec(h(<'envelope_key', argon2id(ov, pwd), pk(skS)>), envn, env), skC
+  ),
+  CKE3( $C, $S,
+        kdf(combine(h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                    h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                    h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                    h(<'4dh', skC, skS, ek, ekS_from_wire>), kem_decaps(ksk, ct)),
+            h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+               kem_pk(ksk), ct>))
+  ),
+  CommI( $C, $S,
+         kdf(combine(h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                     h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                     h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                     h(<'4dh', skC, skS, ek, ekS_from_wire>), kem_decaps(ksk, ct)),
+             h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+                kem_pk(ksk), ct>)),
+         h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+            kem_pk(ksk), ct>)
+  ),
+  SKC( $C, $S,
+       kdf(combine(h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                   h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                   h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                   h(<'4dh', skC, skS, ek, ekS_from_wire>), kem_decaps(ksk, ct)),
+           h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+              kem_pk(ksk), ct>))
+  ),
+  Secret( $C,
+          kdf(combine(h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                      h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                      h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                      h(<'4dh', skC, skS, ek, ekS_from_wire>), kem_decaps(ksk, ct)),
+              h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+                 kem_pk(ksk), ct>))
+  ),
+  Honest( $C ), Honest( $S )
+  ]->
+   [
+   Out( mac(kdf(kdf(combine(h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                            h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                            h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                            h(<'4dh', skC, skS, ek, ekS_from_wire>), kem_decaps(ksk, ct)),
+                    h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+                       kem_pk(ksk), ct>)),
+                'imac'),
+            h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+               kem_pk(ksk), ct>))
+   )
+   ]
+
+  /*
+  rule (modulo AC) KE3:
+     [
+     C1( $C, $S, pwd, skC, pkC, ek, ksk, nc, skS ),
+     In( <ns, pk(ekS_from_wire), env, envn, rmac, ct, ov> )
+     ]
+    --[
+    Eq( rmac,
+        mac(kdf(kdf(combine(h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                            h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                            h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                            h(<'4dh', skC, skS, ek, ekS_from_wire>), z),
+                    h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+                       kem_pk(ksk), ct>)),
+                'rmac'),
+            h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+               kem_pk(ksk), ct>))
+    ),
+    Eq( z.1, skC ),
+    CKE3( $C, $S,
+          kdf(combine(h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                      h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                      h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                      h(<'4dh', skC, skS, ek, ekS_from_wire>), z),
+              h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+                 kem_pk(ksk), ct>))
+    ),
+    CommI( $C, $S,
+           kdf(combine(h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                       h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                       h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                       h(<'4dh', skC, skS, ek, ekS_from_wire>), z),
+               h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+                  kem_pk(ksk), ct>)),
+           h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+              kem_pk(ksk), ct>)
+    ),
+    SKC( $C, $S,
+         kdf(combine(h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                     h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                     h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                     h(<'4dh', skC, skS, ek, ekS_from_wire>), z),
+             h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+                kem_pk(ksk), ct>))
+    ),
+    Secret( $C,
+            kdf(combine(h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                        h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                        h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                        h(<'4dh', skC, skS, ek, ekS_from_wire>), z),
+                h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+                   kem_pk(ksk), ct>))
+    ),
+    Honest( $C ), Honest( $S )
+    ]->
+     [
+     Out( mac(kdf(kdf(combine(h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                              h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                              h(<'4dh', skC, skS, ek, ekS_from_wire>),
+                              h(<'4dh', skC, skS, ek, ekS_from_wire>), z),
+                      h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+                         kem_pk(ksk), ct>)),
+                  'imac'),
+              h(<'tr', pk(ek), pk(ekS_from_wire), nc, ns, pk(skC), pk(skS), env, envn,
+                 kem_pk(ksk), ct>))
+     )
+     ]
+    variants (modulo AC)
+    1. ct    = ct.37
+       env   = env.40
+       envn  = envn.41
+       ksk   = ksk.42
+       ov    = ov.45
+       pwd   = pwd.47
+       skS   = skS.50
+       z     = kem_decaps(ksk.42, ct.37)
+       z.1   = adec(h(<'envelope_key', argon2id(ov.45, pwd.47), pk(skS.50)>),
+                    envn.41, env.40)
+
+    2. ct    = ct.43
+       env   = aenc(h(<'envelope_key', argon2id(ov.51, pwd.53), pk(skS.56)>),
+                    envn.47, z.62)
+       envn  = envn.47
+       ksk   = ksk.48
+       ov    = ov.51
+       pwd   = pwd.53
+       skS   = skS.56
+       z     = kem_decaps(ksk.48, ct.43)
+       z.1   = z.62
+
+    3. ct    = kem_encaps(kem_pk(ksk.74), x.138)
+       env   = aenc(h(<'envelope_key', argon2id(ov.77, pwd.79), pk(skS.82)>),
+                    envn.73, z.88)
+       envn  = envn.73
+       ksk   = ksk.74
+       ov    = ov.77
+       pwd   = pwd.79
+       skS   = skS.82
+       z     = kem_ss(kem_pk(ksk.74), x.138)
+       z.1   = z.88
+
+    4. ct    = kem_encaps(kem_pk(ksk.78), x.145)
+       env   = env.76
+       envn  = envn.77
+       ksk   = ksk.78
+       ov    = ov.81
+       pwd   = pwd.83
+       skS   = skS.86
+       z     = kem_ss(kem_pk(ksk.78), x.145)
+       z.1   = adec(h(<'envelope_key', argon2id(ov.81, pwd.83), pk(skS.86)>),
+                    envn.77, env.76)
+  */
+
+rule (modulo E) Finish:
+   [ S1( $S, $C, sk, imk, tr, ekS, kr ), In( cmac ) ]
+  --[
+  Eq( cmac, mac(imk, tr) ), SrvFin( $S, $C, sk ), CommR( $S, $C, sk, tr ),
+  SKS( $S, $C, sk ), Secret( $S, sk ), Honest( $S ), Honest( $C )
+  ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) CorruptS:
+   [ !Sk( $S, sk ) ] --[ CLtk( $S ) ]-> [ Out( sk ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) CorruptC:
+   [ !Cred( $C, p, sk, pkC ) ] --[ CLtk( $C ) ]-> [ Out( sk ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) CorruptDB:
+   [ !Rec( $S, $C, e, n, pkC, p ) ]
+  --[ CDB( $S, $C ) ]->
+   [ Out( <e, n, pkC> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) RevEphC:
+   [ C1( $C, $S, p, sk, pkC, ek, ksk, nc, skS ) ]
+  --[ RevEph( $C ) ]->
+   [ Out( ek ), Out( ksk ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) RevEphS:
+   [ S1( $S, $C, sk, mk, tr, ekS, kr ) ]
+  --[ RevEph( $S ) ]->
+   [ Out( ekS ), Out( kr ) ]
+
+  /* has exactly the trivial AC variant */
+
+restriction Eq:
+  "∀ x y #i. (Eq( x, y ) @ #i) ⇒ (x = y)"
+  // safety formula
+
+lemma session_key_secrecy:
+  all-traces
+  "∀ C S sk #i.
+    (((SKC( C, S, sk ) @ #i) ∧ (¬(∃ #j. CLtk( C ) @ #j))) ∧
+     (¬(∃ #j. CLtk( S ) @ #j))) ⇒
+    (¬(∃ #j. K( sk ) @ #j))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ C S sk #i.
+  (SKC( C, S, sk ) @ #i)
+ ∧
+  (∀ #j. (CLtk( C ) @ #j) ⇒ ⊥) ∧
+  (∀ #j. (CLtk( S ) @ #j) ⇒ ⊥) ∧
+  (∃ #j. (K( sk ) @ #j))"
+*/
+simplify
+solve( C1( $C, $S, pwd, skC, pkC, ek, ksk, nc, skS ) ▶₀ #i )
+  case KE1
+  solve( splitEqs(0) )
+    case split_case_1
+    solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                            h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                            h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                            h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct)),
+                    h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                       aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                       envn, kem_pk(~ksk), ct>))
+           ) @ #vk.13 )
+      case c_kdf
+      solve( !KU( combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                          h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                          h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                          h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct))
+             ) @ #vk.14 )
+        case c_combine
+        solve( !KU( h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC),
+                       pk(~sk),
+                       aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                       envn, kem_pk(~ksk), ct>)
+               ) @ #vk.15 )
+          case c_h
+          solve( !KU( h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>) ) @ #vk.21 )
+            case c_h
+            solve( !KU( ~skC ) @ #vk.37 )
+              case CorruptC
+              by contradiction /* from formulas */
+            next
+              case CorruptDB
+              solve( !KU( ~sk ) @ #vk.41 )
+                case CorruptS
+                by contradiction /* from formulas */
+              qed
+            next
+              case KE2
+              solve( !KU( ~sk ) @ #vk.41 )
+                case CorruptS
+                by contradiction /* from formulas */
+              qed
+            next
+              case Register
+              solve( !KU( ~sk ) @ #vk.41 )
+                case CorruptS
+                by contradiction /* from formulas */
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  next
+    case split_case_2
+    solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                            h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                            h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                            h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x)),
+                    h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                       aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                       envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>))
+           ) @ #vk.13 )
+      case c_kdf
+      solve( !KU( combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                          h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                          h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                          h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x))
+             ) @ #vk.14 )
+        case c_combine
+        solve( !KU( h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC),
+                       pk(~sk),
+                       aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                       envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>)
+               ) @ #vk.15 )
+          case c_h
+          solve( !KU( h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>) ) @ #vk.21 )
+            case c_h
+            solve( !KU( ~skC ) @ #vk.37 )
+              case CorruptC
+              by contradiction /* from formulas */
+            next
+              case CorruptDB
+              solve( !KU( ~sk ) @ #vk.41 )
+                case CorruptS
+                by contradiction /* from formulas */
+              qed
+            next
+              case KE2
+              solve( !KU( ~sk ) @ #vk.41 )
+                case CorruptS
+                by contradiction /* from formulas */
+              qed
+            next
+              case Register
+              solve( !KU( ~sk ) @ #vk.41 )
+                case CorruptS
+                by contradiction /* from formulas */
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma password_secrecy:
+  all-traces "∀ C p #i. (PwdGen( C, p ) @ #i) ⇒ (¬(∃ #j. K( p ) @ #j))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ C p #i. (PwdGen( C, p ) @ #i) ∧ ∃ #j. (K( p ) @ #j)"
+*/
+simplify
+solve( !Sk( $S, skS ) ▶₄ #i )
+  case Setup
+  by solve( !KU( ~pwd ) @ #vk )
+qed
+
+lemma forward_secrecy:
+  all-traces
+  "∀ C S sk #i #j #k.
+    (((((SKC( C, S, sk ) @ #i) ∧ (CLtk( C ) @ #j)) ∧ (CLtk( S ) @ #k)) ∧
+      (#i < #j)) ∧
+     (#i < #k)) ⇒
+    (¬(∃ #l. K( sk ) @ #l))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ C S sk #i #j #k.
+  (SKC( C, S, sk ) @ #i) ∧ (CLtk( C ) @ #j) ∧ (CLtk( S ) @ #k)
+ ∧
+  (#i < #j) ∧ (#i < #k) ∧ (∃ #l. (K( sk ) @ #l))"
+*/
+simplify
+solve( C1( $C, $S, pwd, skC, pkC, ek, ksk, nc, skS ) ▶₀ #i )
+  case KE1
+  solve( CLtk( $C ) @ #j )
+    case CorruptC
+    solve( !Cred( $C, p, sk.1, pkC ) ▶₀ #j )
+      case Register
+      solve( CLtk( $S ) @ #k )
+        case CorruptC
+        solve( !Cred( $S, p, sk.1, pkC ) ▶₀ #k )
+          case Register
+          solve( splitEqs(0) )
+            case split_case_1
+            solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct)),
+                            h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), ct>))
+                   ) @ #vk.13 )
+              case c_kdf
+              solve( !KU( combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct))
+                     ) @ #vk.14 )
+                case c_combine
+                solve( !KU( h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC),
+                               pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), ct>)
+                       ) @ #vk.15 )
+                  case c_h
+                  solve( !KU( h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>) ) @ #vk.21 )
+                    case c_h
+                    solve( !KU( ~skC ) @ #vk.37 )
+                      case CorruptC
+                      solve( !KU( ~sk ) @ #vk.39 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.41 )
+                      qed
+                    next
+                      case CorruptDB
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case KE2
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case Register
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          next
+            case split_case_2
+            solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x)),
+                            h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>))
+                   ) @ #vk.13 )
+              case c_kdf
+              solve( !KU( combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x))
+                     ) @ #vk.14 )
+                case c_combine
+                solve( !KU( h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC),
+                               pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>)
+                       ) @ #vk.15 )
+                  case c_h
+                  solve( !KU( h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>) ) @ #vk.21 )
+                    case c_h
+                    solve( !KU( ~skC ) @ #vk.37 )
+                      case CorruptC
+                      solve( !KU( ~sk ) @ #vk.39 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.41 )
+                      qed
+                    next
+                      case CorruptDB
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case KE2
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case Register
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      next
+        case CorruptS
+        solve( !Sk( $S, sk.1 ) ▶₀ #k )
+          case Setup
+          solve( splitEqs(0) )
+            case split_case_1
+            solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct)),
+                            h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), ct>))
+                   ) @ #vk.13 )
+              case c_kdf
+              solve( !KU( combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct))
+                     ) @ #vk.14 )
+                case c_combine
+                solve( !KU( h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC),
+                               pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), ct>)
+                       ) @ #vk.15 )
+                  case c_h
+                  solve( !KU( h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>) ) @ #vk.21 )
+                    case c_h
+                    solve( !KU( ~skC ) @ #vk.37 )
+                      case CorruptC
+                      solve( !KU( ~sk ) @ #vk.39 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.41 )
+                      qed
+                    next
+                      case CorruptDB
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case KE2
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case Register
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          next
+            case split_case_2
+            solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x)),
+                            h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>))
+                   ) @ #vk.13 )
+              case c_kdf
+              solve( !KU( combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x))
+                     ) @ #vk.14 )
+                case c_combine
+                solve( !KU( h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC),
+                               pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>)
+                       ) @ #vk.15 )
+                  case c_h
+                  solve( !KU( h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>) ) @ #vk.21 )
+                    case c_h
+                    solve( !KU( ~skC ) @ #vk.37 )
+                      case CorruptC
+                      solve( !KU( ~sk ) @ #vk.39 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.41 )
+                      qed
+                    next
+                      case CorruptDB
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case KE2
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case Register
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  next
+    case CorruptS
+    solve( !Sk( $C, sk.1 ) ▶₀ #j )
+      case Setup
+      solve( CLtk( $S ) @ #k )
+        case CorruptC
+        solve( !Cred( $S, p, sk.2, pkC ) ▶₀ #k )
+          case Register
+          solve( splitEqs(0) )
+            case split_case_1
+            solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct)),
+                            h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), ct>))
+                   ) @ #vk.13 )
+              case c_kdf
+              solve( !KU( combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct))
+                     ) @ #vk.14 )
+                case c_combine
+                solve( !KU( h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC),
+                               pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), ct>)
+                       ) @ #vk.15 )
+                  case c_h
+                  solve( !KU( h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>) ) @ #vk.21 )
+                    case c_h
+                    solve( !KU( ~skC ) @ #vk.37 )
+                      case CorruptC
+                      solve( !KU( ~sk ) @ #vk.39 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.41 )
+                      qed
+                    next
+                      case CorruptDB
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case KE2
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case Register
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          next
+            case split_case_2
+            solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x)),
+                            h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>))
+                   ) @ #vk.13 )
+              case c_kdf
+              solve( !KU( combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x))
+                     ) @ #vk.14 )
+                case c_combine
+                solve( !KU( h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC),
+                               pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>)
+                       ) @ #vk.15 )
+                  case c_h
+                  solve( !KU( h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>) ) @ #vk.21 )
+                    case c_h
+                    solve( !KU( ~skC ) @ #vk.37 )
+                      case CorruptC
+                      solve( !KU( ~sk ) @ #vk.39 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.41 )
+                      qed
+                    next
+                      case CorruptDB
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case KE2
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case Register
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      next
+        case CorruptS
+        solve( !Sk( $S, sk.2 ) ▶₀ #k )
+          case Setup
+          solve( splitEqs(0) )
+            case split_case_1
+            solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct)),
+                            h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), ct>))
+                   ) @ #vk.13 )
+              case c_kdf
+              solve( !KU( combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct))
+                     ) @ #vk.14 )
+                case c_combine
+                solve( !KU( h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC),
+                               pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), ct>)
+                       ) @ #vk.15 )
+                  case c_h
+                  solve( !KU( h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>) ) @ #vk.21 )
+                    case c_h
+                    solve( !KU( ~skC ) @ #vk.37 )
+                      case CorruptC
+                      solve( !KU( ~sk ) @ #vk.39 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.41 )
+                      qed
+                    next
+                      case CorruptDB
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case KE2
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case Register
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          next
+            case split_case_2
+            solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x)),
+                            h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>))
+                   ) @ #vk.13 )
+              case c_kdf
+              solve( !KU( combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x))
+                     ) @ #vk.14 )
+                case c_combine
+                solve( !KU( h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC),
+                               pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>)
+                       ) @ #vk.15 )
+                  case c_h
+                  solve( !KU( h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>) ) @ #vk.21 )
+                    case c_h
+                    solve( !KU( ~skC ) @ #vk.37 )
+                      case CorruptC
+                      solve( !KU( ~sk ) @ #vk.39 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.41 )
+                      qed
+                    next
+                      case CorruptDB
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case KE2
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    next
+                      case Register
+                      solve( !KU( ~sk ) @ #vk.41 )
+                        case CorruptS
+                        by solve( !KU( ~ek ) @ #vk.44 )
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma auth_initiator:
+  all-traces
+  "∀ C S sk tr #i.
+    (((CommI( C, S, sk, tr ) @ #i) ∧ (¬(∃ #j. CLtk( C ) @ #j))) ∧
+     (¬(∃ #j. CLtk( S ) @ #j))) ⇒
+    (∃ #j. (RunR( S, C, sk, tr ) @ #j) ∧ (#j < #i))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ C S sk tr #i.
+  (CommI( C, S, sk, tr ) @ #i)
+ ∧
+  (∀ #j. (CLtk( C ) @ #j) ⇒ ⊥) ∧
+  (∀ #j. (CLtk( S ) @ #j) ⇒ ⊥) ∧
+  (∀ #j. (RunR( S, C, sk, tr ) @ #j) ⇒ ¬(#j < #i))"
+*/
+simplify
+solve( C1( $C, $S, pwd, skC, pkC, ek, ksk, nc, skS ) ▶₀ #i )
+  case KE1
+  solve( splitEqs(0) )
+    case split_case_1
+    solve( !KU( mac(kdf(kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire
+                                      >),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct)),
+                            h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), ct>)),
+                        'rmac'),
+                    h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                       aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                       envn, kem_pk(~ksk), ct>))
+           ) @ #vk.9 )
+      case c_mac
+      solve( !KU( kdf(kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct)),
+                          h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                             aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                             envn, kem_pk(~ksk), ct>)),
+                      'rmac')
+             ) @ #vk.13 )
+        case c_kdf
+        solve( !KU( h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC),
+                       pk(~sk),
+                       aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                       envn, kem_pk(~ksk), ct>)
+               ) @ #vk.14 )
+          case c_h
+          solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct)),
+                          h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                             aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                             envn, kem_pk(~ksk), ct>))
+                 ) @ #vk.20 )
+            case c_kdf
+            solve( !KU( combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct))
+                   ) @ #vk.33 )
+              case c_combine
+              solve( !KU( h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>) ) @ #vk.34 )
+                case c_h
+                solve( !KU( ~skC ) @ #vk.39 )
+                  case CorruptC
+                  by contradiction /* from formulas */
+                next
+                  case CorruptDB
+                  solve( !KU( ~sk ) @ #vk.43 )
+                    case CorruptS
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case KE2
+                  solve( !KU( ~sk ) @ #vk.43 )
+                    case CorruptS
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case Register
+                  solve( !KU( ~sk ) @ #vk.43 )
+                    case CorruptS
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  next
+    case split_case_2
+    solve( !KU( mac(kdf(kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire
+                                      >),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                    h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x)),
+                            h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                               aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                               envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>)),
+                        'rmac'),
+                    h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                       aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                       envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>))
+           ) @ #vk.9 )
+      case KE2
+      by contradiction /* from formulas */
+    next
+      case c_mac
+      solve( !KU( kdf(kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x)),
+                          h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                             aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                             envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>)),
+                      'rmac')
+             ) @ #vk.13 )
+        case c_kdf
+        solve( !KU( h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC),
+                       pk(~sk),
+                       aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                       envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>)
+               ) @ #vk.14 )
+          case c_h
+          solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                  h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x)),
+                          h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                             aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                             envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>))
+                 ) @ #vk.20 )
+            case c_kdf
+            solve( !KU( combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                                h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x))
+                   ) @ #vk.33 )
+              case c_combine
+              solve( !KU( h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>) ) @ #vk.34 )
+                case c_h
+                solve( !KU( ~skC ) @ #vk.39 )
+                  case CorruptC
+                  by contradiction /* from formulas */
+                next
+                  case CorruptDB
+                  solve( !KU( ~sk ) @ #vk.43 )
+                    case CorruptS
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case KE2
+                  solve( !KU( ~sk ) @ #vk.43 )
+                    case CorruptS
+                    by contradiction /* from formulas */
+                  qed
+                next
+                  case Register
+                  solve( !KU( ~sk ) @ #vk.43 )
+                    case CorruptS
+                    by contradiction /* from formulas */
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma auth_responder:
+  all-traces
+  "∀ S C sk tr #i.
+    (((CommR( S, C, sk, tr ) @ #i) ∧ (¬(∃ #j. CLtk( C ) @ #j))) ∧
+     (¬(∃ #j. CLtk( S ) @ #j))) ⇒
+    (∃ #j. (CommI( C, S, sk, tr ) @ #j) ∧ (#j < #i))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ S C sk tr #i.
+  (CommR( S, C, sk, tr ) @ #i)
+ ∧
+  (∀ #j. (CLtk( C ) @ #j) ⇒ ⊥) ∧
+  (∀ #j. (CLtk( S ) @ #j) ⇒ ⊥) ∧
+  (∀ #j. (CommI( C, S, sk, tr ) @ #j) ⇒ ¬(#j < #i))"
+*/
+simplify
+solve( S1( $S, $C, sk, imk, tr, ekS, kr ) ▶₀ #i )
+  case KE2
+  solve( !KU( mac(kdf(kdf(combine(h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es
+                                    >),
+                                  h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>),
+                                  h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>),
+                                  h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>), kem_ss(kpk, ~kr)),
+                          h(<'tr', pk(ekC_from_wire), pk(~es), nc, ~ns, pk(~skC), pk(~sk),
+                             aenc(h(<'envelope_key', argon2id(oprf(~pwd, ~ok), ~pwd), pk(~sk.1)>), ~n,
+                                  ~skC),
+                             ~n, kpk, kem_encaps(kpk, ~kr)>)),
+                      'imac'),
+                  h(<'tr', pk(ekC_from_wire), pk(~es), nc, ~ns, pk(~skC), pk(~sk),
+                     aenc(h(<'envelope_key', argon2id(oprf(~pwd, ~ok), ~pwd), pk(~sk.1)>), ~n,
+                          ~skC),
+                     ~n, kpk, kem_encaps(kpk, ~kr)>))
+         ) @ #vk )
+    case KE3
+    by contradiction /* from formulas */
+  next
+    case c_mac
+    solve( !KU( kdf(kdf(combine(h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>),
+                                h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>),
+                                h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>),
+                                h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>), kem_ss(kpk, ~kr)),
+                        h(<'tr', pk(ekC_from_wire), pk(~es), nc, ~ns, pk(~skC), pk(~sk),
+                           aenc(h(<'envelope_key', argon2id(oprf(~pwd, ~ok), ~pwd), pk(~sk.1)>), ~n,
+                                ~skC),
+                           ~n, kpk, kem_encaps(kpk, ~kr)>)),
+                    'imac')
+           ) @ #vk.6 )
+      case c_kdf
+      solve( !KU( h(<'tr', pk(ekC_from_wire), pk(~es), nc, ~ns, pk(~skC),
+                     pk(~sk),
+                     aenc(h(<'envelope_key', argon2id(oprf(~pwd, ~ok), ~pwd), pk(~sk.1)>), ~n,
+                          ~skC),
+                     ~n, kpk, kem_encaps(kpk, ~kr)>)
+             ) @ #vk.7 )
+        case c_h
+        solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>),
+                                h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>),
+                                h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>),
+                                h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>), kem_ss(kpk, ~kr)),
+                        h(<'tr', pk(ekC_from_wire), pk(~es), nc, ~ns, pk(~skC), pk(~sk),
+                           aenc(h(<'envelope_key', argon2id(oprf(~pwd, ~ok), ~pwd), pk(~sk.1)>), ~n,
+                                ~skC),
+                           ~n, kpk, kem_encaps(kpk, ~kr)>))
+               ) @ #vk.11 )
+          case c_kdf
+          solve( !KU( combine(h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>),
+                              h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>),
+                              h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>),
+                              h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>), kem_ss(kpk, ~kr))
+                 ) @ #vk.28 )
+            case c_combine
+            solve( !KU( h(<'4dh', ~skC, ~sk, ekC_from_wire, ~es>) ) @ #vk.29 )
+              case c_h
+              solve( !KU( ~skC ) @ #vk.34 )
+                case CorruptC
+                by contradiction /* from formulas */
+              next
+                case CorruptDB
+                solve( !KU( ~sk ) @ #vk.38 )
+                  case CorruptS
+                  by contradiction /* from formulas */
+                qed
+              next
+                case KE2
+                solve( !KU( ~sk ) @ #vk.38 )
+                  case CorruptS
+                  by contradiction /* from formulas */
+                qed
+              next
+                case Register
+                solve( !KU( ~sk ) @ #vk.38 )
+                  case CorruptS
+                  by contradiction /* from formulas */
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma and_model:
+  all-traces
+  "∀ C S sk #i.
+    (((SKC( C, S, sk ) @ #i) ∧ (¬(∃ #j. RevEph( C ) @ #j))) ∧
+     (¬(∃ #j. RevEph( S ) @ #j))) ⇒
+    (¬(∃ #j. K( sk ) @ #j))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ C S sk #i.
+  (SKC( C, S, sk ) @ #i)
+ ∧
+  (∀ #j. (RevEph( C ) @ #j) ⇒ ⊥) ∧
+  (∀ #j. (RevEph( S ) @ #j) ⇒ ⊥) ∧
+  (∃ #j. (K( sk ) @ #j))"
+*/
+simplify
+solve( C1( $C, $S, pwd, skC, pkC, ek, ksk, nc, skS ) ▶₀ #i )
+  case KE1
+  solve( splitEqs(0) )
+    case split_case_1
+    solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                            h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                            h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                            h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct)),
+                    h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                       aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                       envn, kem_pk(~ksk), ct>))
+           ) @ #vk.13 )
+      case c_kdf
+      solve( !KU( combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                          h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                          h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                          h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_decaps(~ksk, ct))
+             ) @ #vk.14 )
+        case c_combine
+        solve( !KU( h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC),
+                       pk(~sk),
+                       aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                       envn, kem_pk(~ksk), ct>)
+               ) @ #vk.15 )
+          case c_h
+          solve( !KU( h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>) ) @ #vk.21 )
+            case c_h
+            solve( !KU( ~skC ) @ #vk.37 )
+              case CorruptC
+              solve( !KU( ~sk ) @ #vk.39 )
+                case CorruptS
+                by solve( !KU( ~ek ) @ #vk.41 )
+              qed
+            next
+              case CorruptDB
+              solve( !KU( ~sk ) @ #vk.41 )
+                case CorruptS
+                by solve( !KU( ~ek ) @ #vk.44 )
+              qed
+            next
+              case KE2
+              solve( !KU( ~sk ) @ #vk.41 )
+                case CorruptS
+                by solve( !KU( ~ek ) @ #vk.44 )
+              qed
+            next
+              case Register
+              solve( !KU( ~sk ) @ #vk.41 )
+                case CorruptS
+                by solve( !KU( ~ek ) @ #vk.44 )
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  next
+    case split_case_2
+    solve( !KU( kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                            h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                            h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                            h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x)),
+                    h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                       aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                       envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>))
+           ) @ #vk.13 )
+      case c_kdf
+      solve( !KU( combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                          h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                          h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                          h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), kem_ss(kem_pk(~ksk), x))
+             ) @ #vk.14 )
+        case c_combine
+        solve( !KU( h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC),
+                       pk(~sk),
+                       aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                       envn, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), x)>)
+               ) @ #vk.15 )
+          case c_h
+          solve( !KU( h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>) ) @ #vk.21 )
+            case c_h
+            solve( !KU( ~skC ) @ #vk.37 )
+              case CorruptC
+              solve( !KU( ~sk ) @ #vk.39 )
+                case CorruptS
+                by solve( !KU( ~ek ) @ #vk.41 )
+              qed
+            next
+              case CorruptDB
+              solve( !KU( ~sk ) @ #vk.41 )
+                case CorruptS
+                by solve( !KU( ~ek ) @ #vk.44 )
+              qed
+            next
+              case KE2
+              solve( !KU( ~sk ) @ #vk.41 )
+                case CorruptS
+                by solve( !KU( ~ek ) @ #vk.44 )
+              qed
+            next
+              case Register
+              solve( !KU( ~sk ) @ #vk.41 )
+                case CorruptS
+                by solve( !KU( ~ek ) @ #vk.44 )
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma dictionary_resistance:
+  all-traces
+  "∀ C S p #i #j.
+    ((PwdGen( C, p ) @ #i) ∧ (CDB( S, C ) @ #j)) ⇒ (¬(∃ #k. K( p ) @ #k))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ C S p #i #j.
+  (PwdGen( C, p ) @ #i) ∧ (CDB( S, C ) @ #j) ∧ ∃ #k. (K( p ) @ #k)"
+*/
+simplify
+solve( !Sk( $S, skS ) ▶₄ #i )
+  case Setup
+  solve( !Rec( $S.1, $C, e, n.1, pkC, p ) ▶₀ #j )
+    case Register
+    by solve( !KU( ~pwd ) @ #vk )
+  qed
+qed
+
+lemma completion:
+  exists-trace
+  "∃ C S sk #i #j.
+    ((CKE3( C, S, sk ) @ #i) ∧ (SrvFin( S, C, sk ) @ #j)) ∧ (#i < #j)"
+/*
+guarded formula characterizing all satisfying traces:
+"∃ C S sk #i #j.
+  (CKE3( C, S, sk ) @ #i) ∧ (SrvFin( S, C, sk ) @ #j) ∧ #i < #j"
+*/
+simplify
+solve( C1( $C, $S, pwd, skC, pkC, ek, ksk, nc, skS ) ▶₀ #i )
+  case KE1
+  solve( S1( $S, $C,
+             kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                         h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                         h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>),
+                         h(<'4dh', ~skC, ~sk, ~ek, ekS_from_wire>), z),
+                 h(<'tr', pk(~ek), pk(ekS_from_wire), ~nc, ns, pk(~skC), pk(~sk),
+                    aenc(h(<'envelope_key', argon2id(ov, ~pwd), pk(~sk)>), envn, ~skC),
+                    envn, kem_pk(~ksk), ct>)),
+             imk, tr, ekS, kr
+         ) ▶₀ #j )
+    case KE2
+    solve( !KU( oprf(~pwd, ~ok) ) @ #vk.12 )
+      case KE2
+      solve( !KU( pk(ekC_from_wire) ) @ #vk.20 )
+        case CorruptDB
+        solve( !KU( ~nc ) @ #vk.18 )
+          case KE1
+          solve( !KU( ~ns ) @ #vk.7 )
+            case KE2
+            solve( !KU( ~n ) @ #vk.15 )
+              case CorruptDB
+              solve( !KU( pk(~es) ) @ #vk.14 )
+                case KE2
+                solve( !KU( mac(kdf(kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ~es>),
+                                                h(<'4dh', ~skC, ~sk, ~ek, ~es>),
+                                                h(<'4dh', ~skC, ~sk, ~ek, ~es>),
+                                                h(<'4dh', ~skC, ~sk, ~ek, ~es>), kem_ss(kem_pk(~ksk), ~kr)),
+                                        h(<'tr', pk(~ek), pk(~es), ~nc, ~ns, pk(~skC), pk(~sk),
+                                           aenc(h(<'envelope_key', argon2id(oprf(~pwd, ~ok), ~pwd), pk(~sk)>),
+                                                ~n, ~skC),
+                                           ~n, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), ~kr)>)),
+                                    'rmac'),
+                                h(<'tr', pk(~ek), pk(~es), ~nc, ~ns, pk(~skC), pk(~sk),
+                                   aenc(h(<'envelope_key', argon2id(oprf(~pwd, ~ok), ~pwd), pk(~sk)>), ~n,
+                                        ~skC),
+                                   ~n, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), ~kr)>))
+                       ) @ #vk.16 )
+                  case KE2
+                  solve( !KU( mac(kdf(kdf(combine(h(<'4dh', ~skC, ~sk, ~ek, ~es>),
+                                                  h(<'4dh', ~skC, ~sk, ~ek, ~es>),
+                                                  h(<'4dh', ~skC, ~sk, ~ek, ~es>),
+                                                  h(<'4dh', ~skC, ~sk, ~ek, ~es>), kem_ss(kem_pk(~ksk), ~kr)),
+                                          h(<'tr', pk(~ek), pk(~es), ~nc, ~ns, pk(~skC), pk(~sk),
+                                             aenc(h(<'envelope_key', argon2id(oprf(~pwd, ~ok), ~pwd), pk(~sk)
+                                                    >),
+                                                  ~n, ~skC),
+                                             ~n, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), ~kr)>)),
+                                      'imac'),
+                                  h(<'tr', pk(~ek), pk(~es), ~nc, ~ns, pk(~skC), pk(~sk),
+                                     aenc(h(<'envelope_key', argon2id(oprf(~pwd, ~ok), ~pwd), pk(~sk)>), ~n,
+                                          ~skC),
+                                     ~n, kem_pk(~ksk), kem_encaps(kem_pk(~ksk), ~kr)>))
+                         ) @ #vk.18 )
+                    case KE3
+                    solve( !KU( aenc(h(<'envelope_key', argon2id(oprf(~pwd, ~ok), ~pwd),
+                                        pk(~sk)>),
+                                     ~n, ~skC)
+                           ) @ #vk.17 )
+                      case CorruptDB
+                      solve( !KU( pk(~ek) ) @ #vk.19 )
+                        case KE1
+                        solve( !KU( kem_pk(~ksk) ) @ #vk.20 )
+                          case KE1
+                          solve( !KU( kem_encaps(kem_pk(~ksk), ~kr) ) @ #vk.20 )
+                            case KE2
+                            SOLVED // trace found
+                          qed
+                        qed
+                      qed
+                    qed
+                  qed
+                qed
+              qed
+            qed
+          qed
+        qed
+      qed
+    qed
+  qed
+qed
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+WARNING: the following wellformedness checks failed!
+
+Subterm Convergence Warning
+===========================
+
+  User-defined equations must be convergent and have the finite variant property. The following equations are not subterm convergent. If you are sure that the set of equations is nevertheless convergent and has the finite variant property, you can ignore this warning and continue
+
+    kem_decaps(sk, kem_encaps(kem_pk(sk), r)) = kem_ss(kem_pk(sk), r)
+
+ For more information, please refer to the manual : https://tamarin-prover.com/manual/master/book/010_modeling-issues.html
+
+Message Derivation Checks
+=========================
+
+  The variables of the following rule(s) are not derivable from their premises, you may be performing unintended pattern matching.
+
+Rule KE2:
+Failed to derive Variable(s): ekC_from_wire
+
+Rule KE3:
+Failed to derive Variable(s): ekS_from_wire
+*/
+
+/*
+Generated from:
+Tamarin version 1.10.0
+Maude version 3.4
+Git revision: UNKNOWN, branch: UNKNOWN
+Compiled at: 2025-07-07 04:54:25.960893702 UTC
+*/
+
+end
+
+==============================================================================
+summary of summaries:
+
+analyzed: hybrid_pq_opaque_verified.spthy
+
+  processing time: 53.84s
+
+  WARNING: 2 wellformedness check failed!
+           The analysis results might be wrong!
+
+  session_key_secrecy (all-traces): verified (27 steps)
+  password_secrecy (all-traces): verified (3 steps)
+  forward_secrecy (all-traces): verified (119 steps)
+  auth_initiator (all-traces): verified (32 steps)
+  auth_responder (all-traces): verified (17 steps)
+  and_model (all-traces): verified (29 steps)
+  dictionary_resistance (all-traces): verified (4 steps)
+  completion (exists-trace): verified (16 steps)
+
+==============================================================================

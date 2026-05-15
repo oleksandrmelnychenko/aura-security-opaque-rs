@@ -11,14 +11,15 @@ The repository combines four layers of evidence:
 1. Rust implementation in `rust/crates/`
 2. Symbolic models in `formal/`
 3. Benchmarks and regression suites in `rust/`
-4. Scientific narrative in `docs/main.tex`
+4. Scientific narratives in `docs/main_jisa.tex` and `docs/main.tex`
 
 The project should therefore be evaluated as an artifact-backed
 applied-cryptography submission, not as a paper-only proposal.
 
-`docs/main.tex` is the canonical paper source for the current repository
-state. `docs/SCIENTIFIC_PAPER_REVISED.md` is kept only as a historical
-markdown draft and may contain stale metrics or earlier phrasing.
+`docs/main_jisa.tex` is the English JISA-oriented manuscript, while
+`docs/main.tex` is the Ukrainian full manuscript. `docs/SCIENTIFIC_PAPER_REVISED.md`
+is kept only as a historical markdown draft and may contain stale metrics or
+earlier phrasing.
 
 ## Claim-to-Evidence Map
 
@@ -38,7 +39,7 @@ markdown draft and may contain stale metrics or earlier phrasing.
 If you only have a few minutes, follow this path:
 
 1. Read `README.md`
-2. Read `docs/main.tex`
+2. Read `docs/main_jisa.tex`
 3. Run `cargo test --workspace`
 4. Inspect `formal/logs/FULL_VERIFICATION_REPORT.md`
 5. Inspect `docs/WIRE_PROTOCOL_VERSIONING.md`
@@ -113,7 +114,8 @@ These points matter for fair evaluation:
 
 | File | Why it matters |
 |------|----------------|
-| `docs/main.tex` | Main scientific paper source |
+| `docs/main_jisa.tex` | English JISA-oriented manuscript |
+| `docs/main.tex` | Ukrainian full manuscript |
 | `docs/SCIENTIFIC_PAPER_REVISED.md` | Historical markdown draft; useful for lineage, not as current canonical text |
 | `README.md` | High-level security and artifact overview |
 | `docs/WIRE_PROTOCOL_VERSIONING.md` | Exact wire-message contract |

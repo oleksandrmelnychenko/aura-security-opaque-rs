@@ -38,7 +38,7 @@
 \maketitle
 
 \begin{abstract}
-OPAQUE is a mature augmented PAKE whose authenticated key-exchange core remains classical and therefore exposed to store-now-decrypt-later risk once scalable quantum attacks against discrete-logarithm systems become practical. This paper introduces Hybrid PQ-OPAQUE, a fixed-round reinforcement of OPAQUE that incorporates ML-KEM-768 into the authenticated transcript and final key schedule while preserving the canonical three-message interaction pattern. Session-key derivation binds four Diffie--Hellman terms over Ristretto255 to the ML-KEM shared secret through transcript-bound HKDF extraction. Relative to canonical 3DH-OPAQUE, the construction preserves 1.5 rounds and adds one additional Diffie--Hellman computation, one KEM operation, and 2272 bytes of hybrid payload expansion; the complete authentication wire format grows to 2715 bytes in total. The evidence base combines symbolic analyses in ProVerif and Tamarin with a reproducible Rust implementation, 155 passing tests, and benchmark measurements on Apple M1 Pro. End-to-end authentication remains dominated by Argon2id, and the post-quantum overhead outside password hardening is additive and sub-millisecond. The results show that augmented PAKE can be reinforced against store-now-decrypt-later risk without increasing round complexity or altering the underlying interaction class.
+OPAQUE is a mature augmented PAKE whose authenticated key-exchange core remains classical and therefore exposed to store-now-decrypt-later risk once scalable quantum attacks against discrete-logarithm systems become practical. This paper introduces Hybrid PQ-OPAQUE, a fixed-round reinforcement of OPAQUE that incorporates ML-KEM-768 into the authenticated transcript and final key schedule while preserving the canonical three-message interaction pattern. Session-key derivation binds four Diffie--Hellman terms over Ristretto255 to the ML-KEM shared secret through transcript-bound HKDF extraction. Relative to canonical 3DH-OPAQUE, the construction preserves 1.5 rounds and adds one additional Diffie--Hellman computation, one KEM operation, and 2272 bytes of hybrid payload expansion; the complete authentication wire format grows to 2715 bytes in total. The evidence base combines symbolic analyses in ProVerif and Tamarin with a reproducible Rust implementation, 157 passing tests, and benchmark measurements on Apple M1 Pro. End-to-end authentication remains dominated by Argon2id, and the post-quantum overhead outside password hardening is additive and sub-millisecond. The results show that augmented PAKE can be reinforced against store-now-decrypt-later risk without increasing round complexity or altering the underlying interaction class.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -266,7 +266,7 @@ Honest-party cost & Baseline AKE cost & $+1$ DH + KEM + $O(1)$ & The additional 
 Communication footprint & Baseline handshake size & $+2272$ payload bytes; 2715~B total wire format & The dominant deployment trade-off moves to transport overhead. \\
 Compromise condition & Classical layer failure & Joint weakening of classical and PQ layers in the adopted model & The accepted model yields a stricter recovery condition for final key material. \\
 Symbolic evidence & Classical OPAQUE literature & ProVerif 5/5 queries; Tamarin 8/8 lemmas & Evidence is multi-source and explicitly scoped. \\
-Implementation evidence & Often omitted in prior PAKE papers & 155 passing tests, reproducible Rust artifact & The paper argues from code, models, and measurements together. \\
+Implementation evidence & Often omitted in prior PAKE papers & 157 passing tests, reproducible Rust artifact & The paper argues from code, models, and measurements together. \\
 \bottomrule
 \end{tabularx}
 \end{table*}
@@ -290,11 +290,11 @@ The implementation architecture is layered. A cryptographic core provides protoc
 \toprule
 Component & Role & Lines & Why it matters \\
 \midrule
-Cryptographic core & Key derivation, transcript processing, serialization & 1509 & Encodes the protocol logic that the paper argues about. \\
-Client contour & Initiator-side protocol state machine & 899 & Shows the design is executable beyond pseudocode. \\
+Cryptographic core & Key derivation, transcript processing, serialization & 1513 & Encodes the protocol logic that the paper argues about. \\
+Client contour & Initiator-side protocol state machine & 900 & Shows the design is executable beyond pseudocode. \\
 Server contour & Responder-side protocol logic & 907 & Captures the real server-side cost path and message handling. \\
-FFI layer & Cross-language boundary and exported interface & 2020 & Makes API behavior and boundary safety part of the artifact story. \\
-Tests & Regression, protocol, and interface checks & 3961 & Demonstrates that the work is reproducible and not merely descriptive. \\
+FFI layer & Cross-language boundary and exported interface & 2026 & Makes API behavior and boundary safety part of the artifact story. \\
+Tests & Regression, protocol, and interface checks & 4116 & Demonstrates that the work is reproducible and not merely descriptive. \\
 Formal models & ProVerif and Tamarin material & 1806 & Grounds the scoped formal claims in executable symbolic artifacts. \\
 \bottomrule
 \end{tabularx}
@@ -371,7 +371,7 @@ Isolated responder core & KE2 cryptographic core completes in 254.26~$\mu$s in t
 End-to-end authentication & 481.43~ms [471.73; 495.25], dominated by Argon2id rather than PQ AKE work. \\
 Post-quantum AKE delta & 159.3~$\mu$s beyond the password-hardening step. \\
 Handshake size & 2715~bytes total on the wire, including 2272~bytes of hybrid payload expansion. \\
-Artifact evidence & 155 passing tests; ProVerif 5/5 queries; Tamarin 8/8 lemmas. \\
+Artifact evidence & 157 passing tests; ProVerif 5/5 queries; Tamarin 8/8 lemmas. \\
 \bottomrule
 \end{tabularx}
 \end{table}

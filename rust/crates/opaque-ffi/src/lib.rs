@@ -31,11 +31,21 @@
 //! |------:|--------------------------------------------|
 //! |   `0` | Success                                    |
 //! |  `-1` | Invalid input parameter                    |
+//! |  `-2` | Cryptographic operation failed             |
+//! |  `-3` | Invalid protocol message format or length  |
+//! |  `-4` | Validation failed                          |
 //! |  `-5` | Authentication/protocol validation failed  |
+//! |  `-6` | Invalid public key                         |
 //! |  `-7` | Account already registered                 |
+//! |  `-8` | Malformed ML-KEM key or ciphertext         |
+//! |  `-9` | Envelope has invalid format                |
+//! | `-10` | Unsupported protocol version               |
 //! |`-101` | Provided credentials record is malformed   |
 //! | `-99` | Internal panic (should never happen)        |
 //! |`-100` | Handle is busy (concurrent call rejected)  |
+//!
+//! Protocol-stage validation failures are intentionally collapsed to `-5` in
+//! current FFI paths; the distinct public codes remain part of the ABI.
 //!
 //! ## Thread safety
 //!
@@ -52,11 +62,7 @@ use opaque_core::types::{OpaqueError, OpaqueResult};
 static VERSION_STRING: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
 pub(crate) fn ffi_error_to_int(error: OpaqueError) -> i32 {
-    match error {
-        OpaqueError::InvalidInput => -1,
-        OpaqueError::AlreadyRegistered => -7,
-        _ => -5,
-    }
+    error.to_c_int()
 }
 
 pub(crate) fn result_to_int(r: OpaqueResult<()>) -> i32 {
