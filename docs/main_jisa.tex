@@ -283,9 +283,9 @@ hash-to-group map into Ristretto255~\cite{devalence2024}:
   F_k(x) &= r^{-1} \cdot \beta,
 \end{aligned}
 \end{equation}
-where $r \xleftarrow{\$} \mathbb{Z}_q^*$ is a random client-side
-blinding scalar, $k$ is the server's secret key, and $\mathrm{ctx}$ is
-the domain-separation context for the OPRF invocation.
+where $r \xleftarrow{\$} \mathbb{Z}_q^*$ is a random initiator-side
+blinding scalar, $k$ is the responder's OPRF key, and $\mathrm{ctx}$ is
+the domain-separation context for the invocation.
 
 \subsection{Post-Quantum Cryptography and the NIST 2024 Standards}
 
@@ -382,7 +382,7 @@ implementation-level evaluation. In parallel, UC- and QROM-oriented
 results such as~\cite{lyu2024uc} strengthen compositional guarantees
 for the post-quantum setting. These results are important, but they do
 not directly resolve the migration problem for deployed OPAQUE-like
-systems, where asymmetric client--server roles, wire-format stability,
+systems, where asymmetric initiator--responder roles, wire-format stability,
 and compatibility with existing authentication workflows are central.
 
 A second line of work considers replacement of classical OPRF
@@ -736,7 +736,7 @@ key:
     \label{eq:oprf-key}
 \end{align}
 where $\mathrm{ctr}$ is the smallest one-byte counter for which the resulting
-scalar is non-zero. The server computes
+scalar is non-zero. The responder computes
 $Z = k_{\mathrm{oprf}} \cdot B$; the key $k_{\mathrm{oprf}}$ is then
 immediately destroyed. The response is
 $Z \| PK_S$ (64~bytes).
@@ -1180,7 +1180,7 @@ weakening of the classical and post-quantum layers.
 \textbf{Offline dictionary attacks.} The protection claim is stated for
 \emph{database compromise without compromise of $\sigoprf$}. Under this
 condition, three independent layers
-operate: (1)~OPRF, because without the server-side key
+operate: (1)~OPRF, because without the responder-side OPRF key
 $k_{\mathrm{oprf}}$ the adversary cannot compute $\mathrm{rwd}$;
 (2)~Argon2id with MODERATE parameters (256~MiB, 3 iterations), for
 which one guess costs approximately
@@ -1206,17 +1206,17 @@ $dh_1,\ldots,dh_4$ terms are later recovered by a quantum adversary, the
 hybrid key still depends on $ss_{\mathrm{kem}}$, whose protection is tied
 to ML-KEM-768 and the Module-LWE assumption.
 
-\textbf{Long-term server-key exposure.} Compromise of $sk_S$ permits
-impersonation of the server in future sessions and makes the
-static-server DH terms computable from a recorded transcript, including
+\textbf{Long-term responder-key exposure.} Compromise of $sk_S$ permits
+impersonation of the remote node in future sessions and makes the
+static-responder DH terms computable from a recorded transcript, including
 $dh_1$ and $dh_2$. The narrower post-session claim is that $sk_S$ alone
 does not reconstruct a completed hybrid session: it does not reveal the
-client static secret, the server ephemeral scalar, the
+initiator static secret, the responder ephemeral scalar, the
 ephemeral--ephemeral term $dh_4$, or the ML-KEM shared secret
 $ss_{\mathrm{kem}}$, which depends on the destroyed
 $sk_{\mathrm{kem}}$. The protection statement is therefore scoped to
 recovery of the recorded hybrid session key, not to impersonation after
-the server key has been lost.
+the responder key has been lost.
 
 \textbf{Timing side channels.} MAC comparisons are performed by
 constant-time bytewise comparison without early exit. The implementation
@@ -1292,7 +1292,7 @@ the responder side corresponds to a distinct matching completion on the
 initiator side for the same pair of parties and the same session key. A
 positive result means that successful completion on the responder side
 cannot be explained by replaying a single successful trace across
-multiple client completions. This result is not a computational proof
+multiple initiator completions. This result is not a computational proof
 of the implementation: the model omits side channels, variation in
 error formatting, timing-related leakage, and a range of network-level
 details that remain the domain of implementation testing.
@@ -1314,8 +1314,8 @@ Lemma & Steps & Key property \\
 Session-key secrecy (P1) & 27 & Without corruption events, the adversary cannot derive the session key \\
 Password secrecy (P2) & 3 & The password never appears in externally observable model events \\
 Forward secrecy (P3) & 119 & Post-session compromise of long-term keys does not reveal ephemeral secrets \\
-Initiator authenticity (P5a) & 32 & Successful client completion requires prior responder participation \\
-Responder authenticity (P5b) & 17 & Successful server completion requires a valid KE3 \\
+Initiator authenticity (P5a) & 32 & Successful initiator completion requires prior responder participation \\
+Responder authenticity (P5b) & 17 & Successful responder completion requires a valid KE3 \\
 AND-style combiner interpretation (P6) & 29 & Without compromise of the ephemeral secrets, the 4DH and KEM components are not recovered jointly \\
 Offline-guessing resistance in the DB model (P7) & 4 & Database compromise reveals the record but not the OPRF key \\
 Executability (correctness) & 16 & A successful protocol-completion trace exists \\
@@ -1396,9 +1396,9 @@ and the availability of mature secret-zeroization mechanisms.
 Component & Role & LoC & Principal dependencies \\
 \midrule
 \textbf{Cryptographic core} & Primitives, key derivation, and protocol serialization & 1513 & Ristretto255, ML-KEM, Argon2id \\
-\textbf{Client pipeline} & Initiator logic and client-side protocol phases & 900 & cryptographic core \\
-\textbf{Server pipeline} & Responder logic and session completion & 907 & cryptographic core \\
-\textbf{Interlanguage layer} & External API adapter and protocol invocation & 2026 & client and server pipelines \\
+\textbf{Initiator pipeline} & Local-peer protocol phases & 900 & cryptographic core \\
+\textbf{Responder pipeline} & Remote-node protocol phases and session completion & 907 & cryptographic core \\
+\textbf{Interlanguage layer} & External API adapter and protocol invocation & 2026 & initiator and responder pipelines \\
 \midrule
 \textbf{Total (main code)} & & \textbf{5346} & \\
 Tests & & 4116 & property-based and regression scenarios \\
@@ -1529,9 +1529,9 @@ main quantitative and structural claims reported here.
 
 \subsection{Benchmarks of Cryptographic Primitives}
 
-% FIGURE SLOT F8 (recommended after server benchmark refresh, see docs/FIGURE_PLAN.md):
+% FIGURE SLOT F8 (recommended after benchmark-host refresh, see docs/FIGURE_PLAN.md):
 % Add a runtime profile figure once the benchmark tables are regenerated on the
-% Linux/Xeon server. It should compare Argon2id, ML-KEM full round, 4DH, KE2,
+% Linux/Xeon host. It should compare Argon2id, ML-KEM full round, 4DH, KE2,
 % KE3, and end-to-end authentication on the same platform.
 
 \begin{table}[htbp]
@@ -1551,7 +1551,7 @@ ML-KEM-768 & Encapsulation & 33.62~$\mu$s & [32.89; 34.95] \\
 ML-KEM-768 & Decapsulation & 38.55~$\mu$s & [37.65; 40.11] \\
 ML-KEM-768 & \textbf{Full round} & \textbf{122.01~$\mu$s} & [119.32; 126.96] \\
 OPRF & Blinding & 56.16~$\mu$s & [54.37; 59.36] \\
-OPRF & Server evaluation & 47.59~$\mu$s & [44.97; 52.45] \\
+OPRF & Responder evaluation & 47.59~$\mu$s & [44.97; 52.45] \\
 OPRF & Finalization & 65.68~$\mu$s & [64.17; 67.89] \\
 HKDF & Extract & 1.32~$\mu$s & [1.312; 1.319] \\
 HKDF & Expand (64~bytes) & 1.21~$\mu$s & [1.181; 1.245] \\
@@ -1585,7 +1585,7 @@ constitute a separate bottleneck.
 Phase & Measurement scenario & $\hat{\mu}$ & 95\% CI & Dominant component \\
 \midrule
 Registration & Registration-request creation & 72.46~$\mu$s & [72.15; 72.77] & OPRF blinding \\
-Registration & Server-response creation & 45.92~$\mu$s & [45.72; 46.16] & OPRF evaluation \\
+Registration & Remote-node response creation & 45.92~$\mu$s & [45.72; 46.16] & OPRF evaluation \\
 Registration & Registration completion & \textbf{479.58~ms} & [472.11; 487.75] & \textbf{Argon2id} \\
 Authentication & KE1 generation & 118.83~$\mu$s & [116.59; 121.76] & OPRF + ML-KEM key generation \\
 Authentication & KE2 generation & 297.03~$\mu$s & [294.81; 299.69] & 4DH + ML-KEM encapsulation \\
@@ -1605,18 +1605,18 @@ Consequently, the mean for the full cycle may be slightly lower than
 the mean for the isolated phase, while the 95\% confidence intervals
 overlap substantially. These measurements should be interpreted in
 terms of dominant components rather than direct
-phase-by-phase summation: server-side KE2 generation remains a
+phase-by-phase summation: remote-node KE2 generation remains a
 sub-millisecond operation, whereas Argon2id contributes the
 overwhelming share of time.
 
 \subsection{Key Quantitative Findings and Implementation Implications}
 
-The isolated server profile shows that the responder's cryptographic
+The isolated responder profile shows that the remote node's cryptographic
 core remains compatible with high-throughput deployment:
 isolated KE2 generation takes 254.26~$\mu$s, whereas final responder
 verification takes only 760.82~ns. This yields a theoretical upper
 bound of approximately $3.92 \times 10^3$ authentications per second
-per core for a cryptography-bound server, excluding database access,
+per core for a cryptography-bound remote node, excluding database access,
 telemetry, and business logic.
 
 For the complete AKE without the KSF, the post-quantum component adds
@@ -1732,7 +1732,7 @@ mobile, embedded, or high-latency deployments. \\
 The performance profile is governed mainly by Argon2id; ML-KEM-768 and
 4DH remain sub-millisecond components. The practical deployment question
 is therefore not the absolute cost of ML-KEM-768, but the choice of KSF
-profile for the target client population. The selected profile is
+profile for the target initiator population. The selected profile is
 appropriate for web and B2B settings, whereas mobile and edge
 deployments may require separate KSF calibration and stricter rate
 limiting.
