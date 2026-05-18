@@ -276,12 +276,12 @@ model~\cite{canetti2001}.
 \textbf{Oblivious pseudorandom function (OPRF).} The OPRF core uses a
 hash-to-group map into Ristretto255~\cite{devalence2024}:
 \begin{equation}
-\label{eq:oprf-core}
-\begin{aligned}
-  \alpha &= r \cdot H'(\mathrm{ctx} \,\|\, x),\\
-  \beta &= k \cdot \alpha,\\
-  F_k(x) &= r^{-1} \cdot \beta,
-\end{aligned}
+  \label{eq:oprf-core}
+  \begin{aligned}
+    \alpha &= r \cdot H'(\mathrm{ctx} \,\|\, x),\\
+    \beta &= k \cdot \alpha,\\
+    F_k(x) &= r^{-1} \cdot \beta,
+  \end{aligned}
 \end{equation}
 where $r \xleftarrow{\$} \mathbb{Z}_q^*$ is a random initiator-side
 blinding scalar, $k$ is the responder's OPRF key, and $\mathrm{ctx}$ is
@@ -748,20 +748,18 @@ $Z \| PK_S$ (64~bytes).
 OPRF output:
 \begin{equation}
   y_{\mathrm{oprf}} = H\!\bigl(\Label{oprf} \|
-  \mathtt{0x01} \| \mathrm{pwd} \| U\bigr).
+    \mathtt{0x01} \| \mathrm{pwd} \| U\bigr).
   \label{eq:oprf-output}
 \end{equation}
 KSF input and salt:
-\begin{equation}
-  x_{\mathrm{ksf}} = H\!\bigl(
-    \Label{ksf} \|
-    y_{\mathrm{oprf}} \| \mathrm{pwd}\bigr),
-\end{equation}
-\begin{equation}
-  \mathrm{salt}_{\mathrm{ksf}} =
-  \operatorname{Trunc}_{16}\!\left(
-    H\!\bigl(\Label{salt} \| y_{\mathrm{oprf}}\bigr)\right).
-\end{equation}
+\begin{align}
+  x_{\mathrm{ksf}}
+    &= H\!\bigl(\Label{ksf} \|
+      y_{\mathrm{oprf}} \| \mathrm{pwd}\bigr),\\
+  \mathrm{salt}_{\mathrm{ksf}}
+    &= \operatorname{Trunc}_{16}\!\left(
+      H\!\bigl(\Label{salt} \| y_{\mathrm{oprf}}\bigr)\right).
+\end{align}
 The randomized password is then computed with Argon2id~\cite{biryukov2016}
 as
 \begin{equation}
@@ -816,25 +814,25 @@ of account identity explicit in the cryptographic specification.
 The initiator first samples the OPAQUE authentication randomness and creates
 the ephemeral ML-KEM key pair advertised in the first message:
 \begin{equation}
-\label{eq:ke1-generation}
-\begin{alignedat}{2}
-  e_C &\xleftarrow{\$} \mathbb{Z}_q^*,        &\qquad
-  E_C &= e_C \cdot g,\\
-  n_C &\xleftarrow{\$} \{0,1\}^{192},         &\qquad
-  (pk_{\mathrm{kem}},sk_{\mathrm{kem}})
-      &\leftarrow \mathrm{ML\text{-}KEM\text{-}768.KeyGen}().
-\end{alignedat}
+  \label{eq:ke1-generation}
+  \begin{alignedat}{2}
+    e_C &\xleftarrow{\$} \mathbb{Z}_q^*,        &\qquad
+    E_C &= e_C \cdot g,\\
+    n_C &\xleftarrow{\$} \{0,1\}^{192},         &\qquad
+    (pk_{\mathrm{kem}},sk_{\mathrm{kem}})
+        &\leftarrow \mathrm{ML\text{-}KEM\text{-}768.KeyGen}().
+  \end{alignedat}
 \end{equation}
 The resulting first authentication message is
 \begin{equation}
-\label{eq:ke1-wire-format}
-\begin{aligned}
-  \mathrm{KE1}
-    &= B \,\|\, E_C \,\|\, n_C \,\|\, pk_{\mathrm{kem}},\\
-  |\mathrm{KE1}|
-    &= 32 + 32 + 24 + 1184
-     = 1272~\text{bytes}.
-\end{aligned}
+  \label{eq:ke1-wire-format}
+  \begin{aligned}
+    \mathrm{KE1}
+      &= B \,\|\, E_C \,\|\, n_C \,\|\, pk_{\mathrm{kem}},\\
+    |\mathrm{KE1}|
+      &= 32 + 32 + 24 + 1184
+       = 1272~\text{bytes}.
+  \end{aligned}
 \end{equation}
 With the one-byte protocol version prefix, the wire message
 $v \,\|\, \mathrm{KE1}$ occupies 1273~bytes.
@@ -958,17 +956,18 @@ confirmation keys:
   \notag\\
   K_{\mathrm{mac}}^S &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK},
     \KLabel{macS}, 64),
-    \notag\\
+  \notag\\
   K_{\mathrm{mac}}^C &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK},
     \KLabel{macC}, 64).
   \label{eq:key-derivation}
 \end{align}
+The resulting second authentication message is
 \begin{equation}
-\begin{aligned}
-  \mathrm{KE2} &= n_S \| E_S \| \mathrm{CredResp} \| {}\\
-  &\quad \mathrm{HMAC}(K_{\mathrm{mac}}^S, \tau) \| ct_{\mathrm{kem}}
-    \quad(1376~\text{bytes of payload}).
-\end{aligned}
+  \begin{aligned}
+    \mathrm{KE2} &= n_S \| E_S \| \mathrm{CredResp} \| {}\\
+    &\quad \mathrm{HMAC}(K_{\mathrm{mac}}^S, \tau) \| ct_{\mathrm{kem}}
+      \quad(1376~\text{bytes of payload}).
+  \end{aligned}
 \end{equation}
 In wire format, the message is $v \| \mathrm{KE2}$ and occupies
 1377~bytes.
@@ -1095,16 +1094,16 @@ IND-CCA security of ML-KEM-768 because $sk_{\mathrm{kem}}$ is destroyed
 after decapsulation. Thus post-session exposure of long-term keys alone
 does not reconstruct the full input to the hybrid extractor:
 \begin{equation}
-\label{eq:fs-advantage-bound}
-\begin{aligned}
-  \mathrm{Adv}^{\mathrm{FS}}
-  &\leq
-  \min\!\left\{
-    \mathrm{Adv}_{\mathrm{CDH}}^{\mathrm{Ristretto255}},
-    \mathrm{Adv}_{\mathrm{ML\text{-}KEM}}^{\mathrm{IND\text{-}CCA}}
-  \right\}
-  + \mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}}.
-\end{aligned}
+  \label{eq:fs-advantage-bound}
+  \begin{aligned}
+    \mathrm{Adv}^{\mathrm{FS}}
+    &\leq
+    \min\!\left\{
+      \mathrm{Adv}_{\mathrm{CDH}}^{\mathrm{Ristretto255}},
+      \mathrm{Adv}_{\mathrm{ML\text{-}KEM}}^{\mathrm{IND\text{-}CCA}}
+    \right\}
+    + \mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}}.
+  \end{aligned}
 \end{equation}
 \end{sketchproof}
 
@@ -1126,16 +1125,16 @@ Let
 If, for a fixed transcript $\tau$, at least one of the sources
 $\mathrm{IKM}_{\mathrm{cl}}$ or $\mathrm{IKM}_{\mathrm{pq}}$ remains
 computationally indistinguishable from uniform, then the extracted
-pre-key
+pre-key is
 \[
   \mathrm{PRK} =
   \mathrm{HKDF\text{-}Extract}(\mathrm{salt}_{\tau},
-  \mathrm{IKM}_{\mathrm{cl}} \| \mathrm{IKM}_{\mathrm{pq}})
+    \mathrm{IKM}_{\mathrm{cl}} \| \mathrm{IKM}_{\mathrm{pq}}).
 \]
-is treated as pseudorandom under the standard extractor interpretation
-of HKDF-Extract. This gives the intended AND-style reading of the key
-schedule: explicit recovery of the real session key from the transcript
-requires compromise of \emph{both} sources. The statement is not a
+This value is treated as pseudorandom under the standard extractor
+interpretation of HKDF-Extract. This gives the intended AND-style reading
+of the key schedule: explicit recovery of the real session key from the
+transcript requires compromise of \emph{both} sources. The statement is not a
 standalone computational proof of the combiner. It is an
 extractor-based interpretation that is used consistently in the
 subsequent symbolic model and implementation checks.
@@ -1154,16 +1153,16 @@ bound: indistinguishability of the final key can fail only
 through a break of the surviving source or a break of the extractor
 itself:
 \begin{equation}
-\label{eq:hybrid-advantage-bound}
-\begin{aligned}
-  \mathrm{Adv}^{\mathrm{hybrid}}
-  &\leq
-  \min\!\left\{
-    \mathrm{Adv}_{\mathrm{CDH}}^{\mathrm{Ristretto255}},
-    \mathrm{Adv}_{\mathrm{ML\text{-}KEM}}^{\mathrm{IND\text{-}CCA}}
-  \right\}
-  + \mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}}.
-\end{aligned}
+  \label{eq:hybrid-advantage-bound}
+  \begin{aligned}
+    \mathrm{Adv}^{\mathrm{hybrid}}
+    &\leq
+    \min\!\left\{
+      \mathrm{Adv}_{\mathrm{CDH}}^{\mathrm{Ristretto255}},
+      \mathrm{Adv}_{\mathrm{ML\text{-}KEM}}^{\mathrm{IND\text{-}CCA}}
+    \right\}
+    + \mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}}.
+  \end{aligned}
 \end{equation}
 \end{sketchproof}
 
