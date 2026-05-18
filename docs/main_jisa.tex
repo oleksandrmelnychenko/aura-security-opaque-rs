@@ -412,11 +412,14 @@ reproducible implementation.
 
 \subsection{Problem Formulation and Threat Model}
 
-Let $\mathcal{C}$ (client/initiator) and $\mathcal{S}$
-(server/responder) be the two parties of the protocol, where
+Let $\mathcal{C}$ (initiator/local peer) and $\mathcal{S}$
+(responder/remote node) be the two parties of the protocol, where
 $\mathcal{C}$ holds the password $\mathrm{pwd}$ and $\mathcal{S}$
 stores the registration record $\mathrm{rec}$. Let $\mathbb{G}$ denote
 the prime-order Ristretto255 group of order~$q$ with generator~$g$.
+This terminology permits peer-to-peer deployment language while preserving
+the augmented-PAKE asymmetry: $\mathcal{S}$ is the record-holding remote
+node.
 
 \textbf{Assets to be protected:}
 \begin{itemize}
@@ -576,8 +579,8 @@ are used in the senses fixed in Table~\ref{tab:terminology}.
   msg/.style={-{Stealth[length=2mm]},thick},
   bind/.style={-{Stealth[length=1.7mm]},thick,eclgreen!80!black}
 ]
-  \node[lane] (client) at (0,0) {Client $\mathcal{C}$};
-  \node[lane] (server) at (11,0) {Server $\mathcal{S}$};
+  \node[lane] (client) at (0,0) {Initiator $\mathcal{C}$};
+  \node[lane] (server) at (11,0) {Remote node $\mathcal{S}$};
   \draw[gray!35,dashed] (0,-0.45) -- (0,-8.35);
   \draw[gray!35,dashed] (11,-0.45) -- (11,-8.35);
 
@@ -609,7 +612,8 @@ are used in the senses fixed in Table~\ref{tab:terminology}.
   \draw[bind] (acctnote.north) -- (5.5,-6.70);
 \end{tikzpicture}
 }
-\caption{Hybrid PQ-OPAQUE message flow. ML-KEM public and ciphertext
+\caption{Hybrid PQ-OPAQUE message flow between an initiator and a remote
+node. ML-KEM public and ciphertext
 material are carried in KE1 and KE2, while account and transcript binding
 feed the authenticated key schedule without adding an authentication
 message.}
@@ -782,7 +786,7 @@ unsupported versions. The protocol also uses an explicit account
 identifier $\acct$, a stable byte string naming the account, treated not
 merely as a database lookup key but as cryptographic context.
 
-Let
+Define the account-context hash as
 \begin{equation}
   \eta = H\!\bigl(\Label{ctx} \| \acct\bigr).
   \label{eq:acct-context}
@@ -807,9 +811,9 @@ of account identity explicit in the cryptographic specification.
 
 \subsection{Authentication Phase and Hybrid Key Exchange}
 
-\subsubsection{Generation of KE1 from Client to Server}
+\subsubsection{Generation of KE1 from Initiator to Remote Node}
 
-The client first samples the OPAQUE authentication randomness and creates
+The initiator first samples the OPAQUE authentication randomness and creates
 the ephemeral ML-KEM key pair advertised in the first message:
 \begin{equation}
 \label{eq:ke1-generation}
@@ -835,7 +839,7 @@ The resulting first authentication message is
 With the one-byte protocol version prefix, the wire message
 $v \,\|\, \mathrm{KE1}$ occupies 1273~bytes.
 
-\subsubsection{Generation of KE2 from Server to Client}
+\subsubsection{Generation of KE2 from Remote Node to Initiator}
 
 \textbf{Four-way Diffie--Hellman (4DH):}
 \begin{equation}
@@ -969,11 +973,12 @@ confirmation keys:
 In wire format, the message is $v \| \mathrm{KE2}$ and occupies
 1377~bytes.
 
-\subsubsection{Generation of KE3 from Client to Server}
+\subsubsection{Generation of KE3 from Initiator to Remote Node}
 
 \begin{enumerate}
   \item OPRF finalization, opening of the envelope, and recovery of the
-        server public key, client static key, and client public key;
+        remote node public key, initiator static key, and initiator public
+        key;
   \item Mirror 4DH:
         $dh_1 = sk_C \cdot PK_S$,
         $dh_2 = e_C \cdot PK_S$, $dh_3 = sk_C \cdot E_S$,
@@ -991,7 +996,7 @@ In wire format, the message is $v \| \mathrm{KE2}$ and occupies
         (64~bytes of payload, 65~bytes including the version prefix).
 \end{enumerate}
 
-\subsubsection{Completion on the Server Side}
+\subsubsection{Completion at the Remote Node}
 
 KE3 is verified using a constant-time comparison routine. Upon success,
 the pair $(K_s, K_m)$ becomes available to both parties, thereby
