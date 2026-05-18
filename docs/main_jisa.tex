@@ -103,11 +103,11 @@
 % ============================================================
 Password authentication remains embedded in contemporary information systems, including systems that already use modern transport security. Password-authenticated key exchange, including OPAQUE, still relies on classical hardness assumptions tied to Diffie--Hellman problems and elliptic-curve cryptography. In settings where authentication transcripts may remain sensitive for years, scalable quantum attacks and the store-now-decrypt-later threat make hybrid post-quantum designs a practical migration question.
 
-This paper specifies Hybrid PQ-OPAQUE, an OPAQUE-based construction in which ML-KEM-768 (FIPS~203) is incorporated into the authenticated 4DH exchange path without adding a protocol round. The session key is derived by HKDF-Extract from four Ristretto255 Diffie--Hellman values and the ML-KEM-768 shared secret under a transcript-dependent salt. The specification fixes the wire format, account-context binding through $\acct$, deterministic derivation of the OPRF key from the root secret $\sigoprf$, and transcript-level incorporation of the post-quantum components.
+This paper specifies Hybrid PQ-OPAQUE, an OPAQUE-based construction in which ML-KEM-768 (FIPS~203) is incorporated into the authenticated 4DH exchange path without adding a protocol message. The session key is derived by HKDF-Extract from four Ristretto255 Diffie--Hellman values and the ML-KEM-768 shared secret under a transcript-dependent salt. The specification fixes the wire format, account-context binding through $\acct$, deterministic derivation of the OPRF key from the root secret $\sigoprf$, and transcript-level incorporation of the post-quantum components.
 
 The analysis combines ProVerif~2.05, a surrogate 4DH model in Tamarin~Prover~1.10.0, and a Rust implementation validated by deterministic, integration, and property-oriented tests. The formal results are interpreted within explicit boundaries: they do not constitute a machine-checked proof of the implementation, and the offline-resistance claim is limited to compromise of the server database without compromise of $\sigoprf$.
 
-On Apple~M1~Pro, end-to-end authentication takes 481.43~ms, a full ML-KEM-768 round costs 122.01~$\mu$s, and Argon2id is the main latency component. The post-quantum layer adds 159.3~$\mu$s to the key-exchange path without the KSF and increases the handshake size to 2715~bytes without changing the number of rounds. Relative to classical OPAQUE, the construction adds limited computation for honest parties while moving most overhead to message expansion.
+On Apple~M1~Pro, end-to-end authentication takes 481.43~ms, a full ML-KEM-768 round costs 122.01~$\mu$s, and Argon2id is the main latency component. The post-quantum layer adds 159.3~$\mu$s to the key-exchange path without the KSF and increases the handshake size to 2715~bytes while preserving the three-message interaction profile. Relative to classical OPAQUE, the construction adds limited computation for honest parties while moving most overhead to message expansion.
 \end{abstract}
 
 \begin{keyword}
@@ -132,7 +132,7 @@ In August 2024, NIST published the first post-quantum cryptography standards, in
 
 This paper studies a narrower engineering question: whether OPAQUE can be reinforced with ML-KEM-768 while preserving its three-message authentication flow. The construction combines four Ristretto255 Diffie--Hellman values with an ML-KEM-768 shared secret, binds an explicit account context $\acct$ and wire-format versioning into the transcript, and evaluates the result using symbolic analysis and an executable Rust implementation. The contribution is not a general theory of hybrid PAKE composition; it is an implementation-level augmented-PAKE design with explicit syntax, stated assumptions, and a deliberately limited claim set.
 
-The analysis is organized around four questions: whether ML-KEM-768 can be incorporated without increasing the number of protocol messages; how the classical and post-quantum key materials should be combined to preserve transcript binding; what evidence can support implementation-level claims without overstating them; and whether the added post-quantum cost matters when Argon2id dominates end-to-end latency. These questions are addressed by keeping the protocol description, symbolic models, tests, and benchmarks aligned to one implementation-oriented specification. Relative to classical OPAQUE, the resulting design leaves round complexity unchanged, adds moderate computational overhead outside the password-hardening step, and moves most of the new cost to message expansion in KE1 and KE2.
+The analysis is organized around four questions: whether ML-KEM-768 can be incorporated without increasing the number of protocol messages; how the classical and post-quantum key materials should be combined to preserve transcript binding; what evidence can support implementation-level claims without overstating them; and whether the added post-quantum cost matters when Argon2id dominates end-to-end latency. These questions are addressed by keeping the protocol description, symbolic models, tests, and benchmarks aligned to one implementation-oriented specification. Relative to classical OPAQUE, the resulting design preserves the interaction profile, adds moderate computational overhead outside the password-hardening step, and moves most of the new cost to message expansion in KE1 and KE2.
 
 \subsection{Research Contributions}
 
@@ -474,8 +474,8 @@ absence of side channels or memory-safety bugs in external crates. \\
         compatible with an AND-style interpretation in the adopted
         model, so that explicit recovery of the final key cannot be
         reduced to weakening only one layer;
-  \item[R4] (Interaction preservation): preservation of three messages and
-        1.5 rounds of interaction;
+  \item[R4] (Interaction preservation): preservation of three protocol
+        messages and 1.5 network round trips;
   \item[R5] (Implementability): a reproducible Rust
         implementation suitable for further analysis and engineering.
 \end{description}
@@ -1447,32 +1447,36 @@ however, this excess shrinks to approximately $0.03\%$ of a typical
 end-to-end scenario. The principal trade-off is not CPU cost but
 network volume: the complete handshake occupies
 2715~bytes in wire format, that is, 2272~bytes more than the classical
-variant at unchanged round complexity.
+variant at the same three-message interaction profile.
 
 \paragraph{Comparative claim relative to classical OPAQUE.}
-Let $R_{\mathrm{opq}}, C_{\mathrm{opq}}, W_{\mathrm{opq}}$ denote,
-respectively, the round, computational, and communication complexity of
-canonical 3DH-OPAQUE without the KSF, and let
-$R_{\mathrm{hyb}}, C_{\mathrm{hyb}}, W_{\mathrm{hyb}}$ denote the
-corresponding quantities for Hybrid PQ-OPAQUE. Then
+Let $M_{\mathrm{opq}}, R_{\mathrm{opq}}, C_{\mathrm{opq}}, W_{\mathrm{opq}}$
+denote, respectively, the message count, network round-trip cost,
+cryptographic computation, and communication volume of canonical
+3DH-OPAQUE without the KSF, and let
+$M_{\mathrm{hyb}}, R_{\mathrm{hyb}}, C_{\mathrm{hyb}}, W_{\mathrm{hyb}}$
+denote the corresponding quantities for Hybrid PQ-OPAQUE. Let
+$C_{\mathrm{misc}}$ collect the fixed transcript-binding, serialization,
+and key-derivation work introduced by the hybrid path. Then
 \[
   \begin{aligned}
-    R_{\mathrm{hyb}} &= R_{\mathrm{opq}} = 3 \text{ messages}
-      = 1.5 \text{ rounds},\\
-    C_{\mathrm{hyb}} &= C_{\mathrm{opq}} + C_{\mathrm{1DH}} +
-      C_{\mathrm{KEM}} + O(1),\\
+    M_{\mathrm{hyb}} &= M_{\mathrm{opq}} = 3,\\
+    R_{\mathrm{hyb}} &= R_{\mathrm{opq}} = \tfrac{3}{2}\,\mathrm{RTT},\\
+    C_{\mathrm{hyb}} &= C_{\mathrm{opq}} + C_{\mathrm{DH}} +
+      C_{\mathrm{KEM}} + C_{\mathrm{misc}},\\
     W_{\mathrm{hyb}} &= W_{\mathrm{opq}} + \Delta W,\qquad
       \Delta W = 2272~\text{bytes}.
   \end{aligned}
 \]
 On the benchmark platform, this corresponds to a measured increase of
-$C_{\mathrm{1DH}} + C_{\mathrm{KEM}} \approx 159.3~\mu$s without the
+$C_{\mathrm{DH}} + C_{\mathrm{KEM}} + C_{\mathrm{misc}}
+\approx 159.3~\mu$s without the
 KSF. Compared with the established baseline of classical OPAQUE, the
-cost for honest parties rises additively and remains fixed-round,
-whereas within the present threat model explicit compromise of the
+cost for honest parties rises additively, and the interaction profile is
+unchanged. Within the present threat model, explicit compromise of the
 final key material is not reducible to weakening the classical
-contribution alone. It is interpreted as requiring compromise of both
-the classical and post-quantum layers.
+contribution alone; it is interpreted as requiring compromise of both the
+classical and post-quantum layers.
 
 \begin{table}[htbp]
 \caption{Comparison of Hybrid PQ-OPAQUE with canonical 3DH-OPAQUE}
@@ -1482,8 +1486,8 @@ the classical and post-quantum layers.
 \toprule
 Aspect & 3DH-OPAQUE & Hybrid PQ-OPAQUE & Interpretation \\
 \midrule
-Round complexity & 3 messages, 1.5 rounds & 3 messages, 1.5 rounds & Protocol interaction is unchanged \\
-Computational complexity for honest parties & Baseline 3DH path & $+1$ additional DH, $+$ KEM, $+O(1)$ & The increase is additive rather than structural \\
+Interaction profile & 3 messages, 1.5 RTTs & 3 messages, 1.5 RTTs & Protocol interaction is unchanged \\
+Computational complexity for honest parties & Baseline 3DH path & $+1$ additional DH, $+$ KEM, $+$ fixed transcript/KDF work & The increase is additive rather than structural \\
 Communication complexity & Baseline handshake volume & $+2272$ bytes in wire format & The principal practical trade-off shifts to transport \\
 Key-compromise condition & Weakening of the classical contribution & Compromise of both the classical and PQ layers & The recovery condition is stricter within the present threat model \\
 \bottomrule
