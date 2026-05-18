@@ -82,7 +82,7 @@
 \newtheorem{claim}[theorem]{Claim}
 \newtheorem{example}[theorem]{Example}
 \newtheorem{utheorem}{Theorem}
-\newenvironment{sketchproof}{\par\noindent\textit{Proof sketch.}\ }{\hfill$\square$\par}
+\newenvironment{sketchproof}{\par\noindent\textit{Proof sketch.}\ }{\par}
 
 % ============================================================
 \begin{document}
@@ -912,7 +912,6 @@ procedure~\eqref{eq:rwd}:
 \[
   T_{\mathrm{guess}} \approx T_{\mathrm{Argon2id}},\qquad
   C_{\mathrm{offline}} \approx |\mathcal{D}| \cdot T_{\mathrm{guess}}.
-  \qquad \blacksquare
 \]
 \end{sketchproof}
 
@@ -932,14 +931,19 @@ session ephemeral scalar or a break of CDH on the recorded ephemeral
 points. In parallel, $ss_{\mathrm{kem}}$ remains protected under the
 IND-CCA security of ML-KEM-768 because $sk_{\mathrm{kem}}$ is destroyed
 after decapsulation. Thus post-session exposure of long-term keys alone
-does not reconstruct the full input to the hybrid extractor.
-\[
-  \mathrm{Adv}^{\mathrm{FS}} \leq
-  \min\!\bigl(\mathrm{Adv}_{\mathrm{CDH}}^{\mathrm{Ristretto255}},\;
-  \mathrm{Adv}_{\mathrm{ML\text{-}KEM}}^{\mathrm{IND\text{-}CCA}}\bigr)
-  + \mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}}.
-  \qquad \blacksquare
-\]
+does not reconstruct the full input to the hybrid extractor:
+\begin{equation}
+\label{eq:fs-advantage-bound}
+\begin{aligned}
+  \mathrm{Adv}^{\mathrm{FS}}
+  &\leq
+  \min\!\left\{
+    \mathrm{Adv}_{\mathrm{CDH}}^{\mathrm{Ristretto255}},
+    \mathrm{Adv}_{\mathrm{ML\text{-}KEM}}^{\mathrm{IND\text{-}CCA}}
+  \right\}
+  + \mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}} .
+\end{aligned}
+\end{equation}
 \end{sketchproof}
 
 \begin{claim}[Mutual authentication]
@@ -948,7 +952,6 @@ by
 \[
   \mathrm{Adv}^{\mathrm{auth}} \leq
   \mathrm{Adv}_{\mathrm{HMAC}}^{\mathrm{PRF}} + q_s / 2^{512}.
-  \qquad \blacksquare
 \]
 \end{claim}
 
@@ -987,13 +990,18 @@ remains pseudorandom even for arbitrary $X$. This yields the upper
 bound: indistinguishability of the final key can fail only
 through a break of the surviving source or a break of the extractor
 itself:
-\[
-  \mathrm{Adv}^{\mathrm{hybrid}} \leq
-  \min\!\bigl(\mathrm{Adv}_{\mathrm{CDH}}^{\mathrm{Ristretto255}},\;
-  \mathrm{Adv}_{\mathrm{ML\text{-}KEM}}^{\mathrm{IND\text{-}CCA}}\bigr)
-  + \mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}}.
-  \qquad \blacksquare
-\]
+\begin{equation}
+\label{eq:hybrid-advantage-bound}
+\begin{aligned}
+  \mathrm{Adv}^{\mathrm{hybrid}}
+  &\leq
+  \min\!\left\{
+    \mathrm{Adv}_{\mathrm{CDH}}^{\mathrm{Ristretto255}},
+    \mathrm{Adv}_{\mathrm{ML\text{-}KEM}}^{\mathrm{IND\text{-}CCA}}
+  \right\}
+  + \mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}} .
+\end{aligned}
+\end{equation}
 \end{sketchproof}
 
 This bound explains the AND-style interpretation used in the sequel. If
@@ -1097,8 +1105,8 @@ implementation-level checks to show which claims are supported at which
 layer. ProVerif is most useful for message logic and correspondence
 properties in a simplified unbounded-session setting, Tamarin for
 stateful properties such as forward secrecy and the combiner
-interpretation, and Rust tests for failures that arise only in the
-concrete implementation.
+interpretation, and Rust tests for implementation-specific failure modes
+not represented in the symbolic model.
 
 \subsubsection{ProVerif 2.05}
 
