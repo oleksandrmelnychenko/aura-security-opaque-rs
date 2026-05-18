@@ -282,7 +282,8 @@ hash-to-group map into Ristretto255~\cite{devalence2024}:
 \end{aligned}
 \end{equation}
 where $r \xleftarrow{\$} \mathbb{Z}_q^*$ is a random client-side
-blinding scalar and $k$ is the server's secret key.
+blinding scalar, $k$ is the server's secret key, and $\mathrm{ctx}$ is
+the domain-separation context for the OPRF invocation.
 
 \subsection{Post-Quantum Cryptography and the NIST 2024 Standards}
 
@@ -1087,7 +1088,7 @@ does not reconstruct the full input to the hybrid extractor:
     \mathrm{Adv}_{\mathrm{CDH}}^{\mathrm{Ristretto255}},
     \mathrm{Adv}_{\mathrm{ML\text{-}KEM}}^{\mathrm{IND\text{-}CCA}}
   \right\}
-  + \mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}} .
+  + \mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}}.
 \end{aligned}
 \end{equation}
 \end{sketchproof}
@@ -1109,7 +1110,8 @@ Let
 \]
 If, for a fixed transcript $\tau$, at least one of the sources
 $\mathrm{IKM}_{\mathrm{cl}}$ or $\mathrm{IKM}_{\mathrm{pq}}$ remains
-computationally indistinguishable from uniform, then
+computationally indistinguishable from uniform, then the extracted
+pre-key
 \[
   \mathrm{PRK} =
   \mathrm{HKDF\text{-}Extract}(\mathrm{salt}_{\tau},
@@ -1145,7 +1147,7 @@ itself:
     \mathrm{Adv}_{\mathrm{CDH}}^{\mathrm{Ristretto255}},
     \mathrm{Adv}_{\mathrm{ML\text{-}KEM}}^{\mathrm{IND\text{-}CCA}}
   \right\}
-  + \mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}} .
+  + \mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}}.
 \end{aligned}
 \end{equation}
 \end{sketchproof}
