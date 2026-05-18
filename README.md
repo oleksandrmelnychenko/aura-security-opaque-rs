@@ -8,7 +8,7 @@ Hybrid post-quantum **OPAQUE** implementation in Rust combining
 **4DH Ristretto255** with **ML-KEM-768** for password-authenticated key
 exchange.
 
-This repository is not just a prototype. It packages:
+This repository packages:
 
 - a multi-crate Rust implementation of the protocol;
 - formal models in Tamarin and ProVerif;
@@ -16,12 +16,11 @@ This repository is not just a prototype. It packages:
 - Criterion benchmarks for primitive, protocol, and relay throughput layers;
 - paper-ready documentation of the wire format, threat boundary, and artifact story.
 
-Scientific sources: `docs/main_jisa.tex` is the English JISA-oriented
-manuscript, and `docs/main.tex` is the Ukrainian full manuscript. Historical
-drafts and audit snapshots are kept for traceability, but should not be cited
-as the current source of truth unless explicitly marked otherwise.
+Scientific source: `docs/main_jisa.tex` is the canonical English
+JISA-oriented manuscript. Older manuscript drafts have been removed from
+the repository to keep the public artifact aligned with the current text.
 
-## Why This Work Stands Out
+## Artifact Summary
 
 Hybrid PQ-OPAQUE is designed as a reproducible, artifact-backed
 post-quantum augmented PAKE rather than as a paper-only construction.
@@ -71,8 +70,6 @@ Security claims are intentionally scoped to the implemented trust boundary:
 | Need | Where to look |
 |------|---------------|
 | English journal manuscript | `docs/main_jisa.tex` |
-| Ukrainian full manuscript | `docs/main.tex` |
-| Historical markdown draft | `docs/SCIENTIFIC_PAPER_REVISED.md` (archival, non-canonical) |
 | Presentation / defense flow | `docs/PRESENTATION_OUTLINE.md` |
 | Wire format and versioning | `docs/WIRE_PROTOCOL_VERSIONING.md` |
 | Production assumptions | `docs/PRODUCTION_READINESS.md` |

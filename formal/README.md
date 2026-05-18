@@ -54,7 +54,7 @@ when citing the formal results.
 
 ## How To Inspect Quickly
 
-For most reviewers, the best order is:
+For most reviewers, the recommended order is:
 
 1. Read `logs/FULL_VERIFICATION_REPORT.md`
 2. Read `logs/TAMARIN_VERIFICATION_REPORT.md`
@@ -99,7 +99,7 @@ brew install proverif
 
 ## Relation to the Paper
 
-These artifacts back the security-analysis sections of `docs/main.tex`.
+These artifacts back the security-analysis sections of `docs/main_jisa.tex`.
 The paper intentionally combines:
 
 - symbolic evidence from this directory,

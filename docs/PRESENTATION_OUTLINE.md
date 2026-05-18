@@ -22,9 +22,9 @@ Message:
 - wire-versioned protocol with `account_id` binding
 
 Use:
-- protocol summary from `docs/main.tex`
+- protocol summary from `docs/main_jisa.tex`
 
-## Slide 3 — Why This Is Not Just an Idea
+## Slide 3 — Artifact Evidence
 
 Message:
 - real Rust implementation
@@ -39,7 +39,7 @@ Use:
 ## Slide 4 — Evidence Stack
 
 Primary visual:
-- Figure `fig:evidence-stack` from `docs/main.tex`
+- claim-scope and traceability tables from `docs/main_jisa.tex`
 
 Message:
 - claims are supported by multiple independent layers
@@ -96,7 +96,7 @@ Message:
 Message:
 - Hybrid PQ-OPAQUE is practical now
 - the repository is reviewable and reproducible
-- the work is ready for scrutiny, not just presentation
+- the work is ready for scrutiny and presentation
 
 ## Judge-Facing One-Line Pitch
 

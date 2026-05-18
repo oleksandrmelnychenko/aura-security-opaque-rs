@@ -11,15 +11,14 @@ The repository combines four layers of evidence:
 1. Rust implementation in `rust/crates/`
 2. Symbolic models in `formal/`
 3. Benchmarks and regression suites in `rust/`
-4. Scientific narratives in `docs/main_jisa.tex` and `docs/main.tex`
+4. Scientific narrative in `docs/main_jisa.tex`
 
 The project should therefore be evaluated as an artifact-backed
 applied-cryptography submission, not as a paper-only proposal.
 
-`docs/main_jisa.tex` is the English JISA-oriented manuscript, while
-`docs/main.tex` is the Ukrainian full manuscript. `docs/SCIENTIFIC_PAPER_REVISED.md`
-is kept only as a historical markdown draft and may contain stale metrics or
-earlier phrasing.
+`docs/main_jisa.tex` is the canonical English JISA-oriented manuscript.
+Older manuscript drafts have been removed from the repository so reviewers
+do not encounter stale metrics or earlier phrasing.
 
 ## Claim-to-Evidence Map
 
@@ -93,7 +92,7 @@ proverif hybrid_pq_opaque_auth.pv
 ./run-tamarin.sh
 ```
 
-For many reviewers, the archived reports in `formal/logs/` are the best
+For many reviewers, the archived reports in `formal/logs/` are a practical
 starting point because they explain the boundary between the verified
 surrogate model and the shipped implementation.
 
@@ -115,12 +114,10 @@ These points matter for fair evaluation:
 | File | Why it matters |
 |------|----------------|
 | `docs/main_jisa.tex` | English JISA-oriented manuscript |
-| `docs/main.tex` | Ukrainian full manuscript |
-| `docs/SCIENTIFIC_PAPER_REVISED.md` | Historical markdown draft; useful for lineage, not as current canonical text |
 | `README.md` | High-level security and artifact overview |
 | `docs/WIRE_PROTOCOL_VERSIONING.md` | Exact wire-message contract |
 | `docs/PRODUCTION_READINESS.md` | Operational deployment boundary |
 | `formal/README.md` | Symbolic-model orientation |
-| `formal/logs/FULL_VERIFICATION_REPORT.md` | Best single summary of formal evidence |
+| `formal/logs/FULL_VERIFICATION_REPORT.md` | Concise summary of formal evidence |
 | `rust/crates/opaque-agent/tests/security_regressions.rs` | Boundary-condition security tests |
 | `rust/crates/opaque-core/benches/` | Reproducible performance evidence |
