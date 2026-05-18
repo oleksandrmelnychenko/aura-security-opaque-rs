@@ -132,7 +132,7 @@ In August 2024, NIST published the first post-quantum cryptography standards, in
 
 This paper studies a narrower engineering question: whether OPAQUE can be reinforced with ML-KEM-768 while preserving its three-message authentication flow. The construction combines four Ristretto255 Diffie--Hellman values with an ML-KEM-768 shared secret, binds an explicit account context represented by the account identifier $\acct$ and wire-format versioning into the transcript, and evaluates the result using symbolic analysis and an executable reference implementation in Rust. The contribution is not a general theory of hybrid PAKE composition; it is an implementation-level augmented-PAKE design with explicit syntax, stated assumptions, and a deliberately limited claim set.
 
-The analysis is organized around four questions: whether ML-KEM-768 can be incorporated without increasing the number of protocol messages; how the classical and post-quantum key materials should be combined to preserve transcript binding; what evidence can support implementation-level claims without overstating them; and whether the added post-quantum cost matters when Argon2id dominates end-to-end latency. These questions are addressed by keeping the protocol description, symbolic models, tests, and benchmarks aligned to one implementation-oriented specification. Relative to classical OPAQUE, the resulting design preserves the interaction profile, adds moderate computational overhead outside the password-hardening step, and moves most of the new cost to message expansion in KE1 and KE2.
+The analysis is organized around four questions: whether ML-KEM-768 can be incorporated without increasing the number of protocol messages; how the classical and post-quantum key materials should be combined to preserve transcript binding; what evidence can support implementation-level claims without overstating them; and whether the added post-quantum cost matters when Argon2id dominates end-to-end latency. These questions are addressed by keeping the protocol description, symbolic models, tests, and benchmarks aligned to one implementation-oriented specification. In this paper, the research artifact denotes the accompanying source package that keeps these evidence layers aligned: Rust crates, formal models, archived verification logs, tests, benchmark harnesses, and adapter documentation. Relative to classical OPAQUE, the resulting design preserves the interaction profile, adds moderate computational overhead outside the password-hardening step, and moves most of the new cost to message expansion in KE1 and KE2.
 
 \subsection{Research Contributions}
 
@@ -1931,9 +1931,10 @@ should also remain distinguishable: cryptographic failure,
 version-negotiation failure, and transport failure have different
 operational meanings, and collapsing them into a generic failed login
 would obscure diagnosis during deployment.
-Comparable deployment constraints arise in industrial monitoring and
-inspection platforms that combine UAV operation, multimodal imagery,
-and SCADA-linked telemetry~\cite{svystun2025dytam,svystun2024thermal,lysyi2025fire}.
+The same distinction between cryptographic, transport, and workflow
+failures matters in audit-heavy cyber-physical deployments, where
+authentication is part of a broader telemetry and inspection pipeline
+rather than an isolated login step~\cite{svystun2025dytam,svystun2024thermal,lysyi2025fire}.
 
 \subsection{Reproducibility and Artifact Transparency}
 
@@ -2039,12 +2040,13 @@ contracts rather than against the prose alone.
 % ============================================================
 
 OpenAI Codex was used during manuscript preparation to assist with
-English-language drafting, stylistic revision, and \LaTeX{} editing in
-portions of the abstract, introduction, discussion, conclusion, and
-related connective prose. The system was not used as an authoritative
-source for technical claims. All protocol descriptions, equations,
-references, tables, implementation details, and experimental results
-were independently reviewed, verified, and approved by the author.
+English-language drafting assistance, stylistic revision, and minor
+\LaTeX{} typesetting support in portions of the abstract, introduction,
+discussion, conclusion, and related connective prose. The system was not
+used as an authoritative source for technical claims. All protocol
+descriptions, equations, references, tables, implementation details, and
+experimental results were independently reviewed, verified, and approved
+by the author.
 
 % ============================================================
 % The canonical bibliography for the submission PDF is maintained
@@ -2057,21 +2059,25 @@ were independently reviewed, verified, and approved by the author.
 Bonneau~J., Herley~C., van~Oorschot~P.\,C., Stajano~F.
 The quest to replace passwords: a framework for comparative evaluation of web authentication schemes.
 In: Proceedings of the IEEE Symposium on Security and Privacy, 2012, pp.~553--567.
+DOI:~\url{https://doi.org/10.1109/SP.2012.44}.
 
 \bibitem{florencio2007}
 Florencio~D., Herley~C.
 A large-scale study of web password habits.
 In: Proceedings of the International Conference on World Wide Web, 2007, pp.~657--666.
+URL:~\url{https://archives.iw3c2.org/www2007/papers/paper620.pdf}.
 
 \bibitem{bellare2000}
 Bellare~M., Pointcheval~D., Rogaway~P.
 Authenticated key exchange secure against dictionary attacks.
 In: EUROCRYPT 2000, LNCS~1807, Springer, 2000, pp.~139--155.
+DOI:~\url{https://doi.org/10.1007/3-540-45539-6_11}.
 
 \bibitem{jarecki2018}
 Jarecki~S., Krawczyk~H., Xu~J.
 OPAQUE: an asymmetric PAKE protocol secure against pre-computation attacks.
 In: EUROCRYPT 2018, LNCS~10822, Springer, 2018, pp.~456--486.
+DOI:~\url{https://doi.org/10.1007/978-3-319-78372-7_15}.
 
 \bibitem{ietf-opaque}
 Bourdrez~D., Krawczyk~H., Lewi~K., Wood~C.\,A.
@@ -2083,16 +2089,19 @@ URL:~\url{https://www.rfc-editor.org/info/rfc9807}.
 Shor~P.\,W.
 Algorithms for quantum computation: discrete logarithms and factoring.
 In: Proceedings of the IEEE Symposium on Foundations of Computer Science, 1994, pp.~124--134.
+DOI:~\url{https://doi.org/10.1109/SFCS.1994.365700}.
 
 \bibitem{bernstein2017}
 Bernstein~D.\,J., Lange~T.
 Post-quantum cryptography.
 Nature 549(7671) (2017) 188--194.
+DOI:~\url{https://doi.org/10.1038/nature23461}.
 
 \bibitem{roetteler2017}
 Roetteler~M., Naehrig~M., Svore~K.\,M., Lauter~K.
 Quantum resource estimates for computing elliptic curve discrete logarithms.
 In: ASIACRYPT 2017, LNCS~10625, Springer, 2017, pp.~241--270.
+DOI:~\url{https://doi.org/10.1007/978-3-319-70697-9_9}.
 
 \bibitem{babbush2026}
 Babbush~R., Zalcman~A., Gidney~C., Broughton~M., Khattar~T.,
@@ -2106,6 +2115,7 @@ URL:~\url{https://quantumai.google/static/site-assets/downloads/cryptocurrency-w
 Mosca~M.
 Cybersecurity in an era with quantum computers: will we be ready?
 IEEE Security \& Privacy 16(5) (2018) 38--41.
+DOI:~\url{https://doi.org/10.1109/MSP.2018.3761723}.
 
 \bibitem{fips203}
 National Institute of Standards and Technology.
@@ -2126,14 +2136,16 @@ IETF Internet-Draft draft-ietf-tls-hybrid-design-16, work in progress, September
 URL:~\url{https://datatracker.ietf.org/doc/draft-ietf-tls-hybrid-design/}.
 
 \bibitem{brendel2020}
-Brendel~J., Fiedler~R., G\"{u}nther~F., Jacobsen~C., Poettering~B.
-Post-quantum security of the Signal protocol.
-In: SAC 2020, LNCS~12804, Springer, 2020, pp.~567--591.
+Brendel~J., Fischlin~M., G\"{u}nther~F., Janson~C., Stebila~D.
+Towards post-quantum security for Signal's X3DH handshake.
+In: SAC 2020, LNCS~12804, Springer, 2020, pp.~404--430.
+DOI:~\url{https://doi.org/10.1007/978-3-030-81652-0_16}.
 
 \bibitem{hulsing2021}
 H\"{u}lsing~A., Ning~K.-C., Schwabe~P., Weber~F., Zimmermann~P.\,R.
 Post-quantum WireGuard.
 In: Proceedings of the IEEE Symposium on Security and Privacy, 2021, pp.~304--321.
+DOI:~\url{https://doi.org/10.1109/SP40001.2021.00030}.
 
 \bibitem{arriaga2024}
 Arriaga~A., Barbosa~M., Jarecki~S., Skrobot~M.
@@ -2145,6 +2157,7 @@ URL:~\url{https://eprint.iacr.org/2024/308}.
 Lyu~Y., Liu~S., Han~S.
 Universal composable password authenticated key exchange for the post-quantum world.
 In: EUROCRYPT 2024, LNCS~14657, Springer, 2024, pp.~120--150.
+DOI:~\url{https://doi.org/10.1007/978-3-031-58754-2_5}.
 
 \bibitem{hesse2024}
 Hesse~J., Rosenberg~M.
@@ -2162,11 +2175,13 @@ URL:~\url{https://eprint.iacr.org/2024/1630}.
 Boyko~V., MacKenzie~P., Patel~S.
 Provably secure password-authenticated key exchange using Diffie--Hellman.
 In: EUROCRYPT 2000, LNCS~1807, Springer, 2000, pp.~156--171.
+DOI:~\url{https://doi.org/10.1007/3-540-45539-6_12}.
 
 \bibitem{bellovin1992}
 Bellovin~S.\,M., Merritt~M.
 Encrypted key exchange: password-based protocols secure against dictionary attacks.
 In: Proceedings of the IEEE Symposium on Security and Privacy, 1992, pp.~72--84.
+DOI:~\url{https://doi.org/10.1109/RISP.1992.213269}.
 
 \bibitem{ladd2023}
 Ladd~W.
@@ -2178,16 +2193,19 @@ URL:~\url{https://www.rfc-editor.org/info/rfc9382}.
 Haase~B., Labrique~B.
 AuCPace: efficient verifier-based PAKE protocol tailored for the IIoT.
 IACR Transactions on Cryptographic Hardware and Embedded Systems 2019(2) (2019) 1--48.
+DOI:~\url{https://doi.org/10.46586/tches.v2019.i2.1-48}.
 
 \bibitem{wu1998}
 Wu~T.
 The Secure Remote Password protocol.
 In: Proceedings of NDSS, 1998, pp.~97--111.
+URL:~\url{https://www.ndss-symposium.org/ndss1998/secure-remote-password-protocol/}.
 
 \bibitem{canetti2001}
 Canetti~R.
 Universally composable security: a new paradigm for cryptographic protocols.
 In: Proceedings of the IEEE Symposium on Foundations of Computer Science, 2001, pp.~136--145.
+DOI:~\url{https://doi.org/10.1109/SFCS.2001.959888}.
 
 \bibitem{devalence2024}
 de~Valence~H., Grigg~J., Hamburg~M., Lovecruft~I., Tankersley~G.,
@@ -2206,6 +2224,7 @@ URL:~\url{https://eprint.iacr.org/2024/1615}.
 Castryck~W., Decru~T.
 An efficient key recovery attack on SIDH.
 In: EUROCRYPT 2023, LNCS~14008, Springer, 2023, pp.~423--447.
+DOI:~\url{https://doi.org/10.1007/978-3-031-30589-4_15}.
 
 \bibitem{vos2025}
 Vos~J., Jarecki~S., Wood~C.\,A.
@@ -2217,21 +2236,25 @@ URL:~\url{https://datatracker.ietf.org/doc/draft-vos-cfrg-pqpake/00/}.
 Biryukov~A., Dinu~D., Khovratovich~D.
 Argon2: new generation of memory-hard functions for password hashing.
 In: Proceedings of IEEE European Symposium on Security and Privacy, 2016, pp.~292--302.
+DOI:~\url{https://doi.org/10.1109/EuroSP.2016.31}.
 
 \bibitem{krawczyk2010}
 Krawczyk~H., Eronen~P.
 HMAC-based Extract-and-Expand Key Derivation Function (HKDF).
 IETF RFC~5869, 2010.
+URL:~\url{https://www.rfc-editor.org/info/rfc5869}.
 
 \bibitem{cremers2012}
 Cremers~C., Mauw~S.
 Operational Semantics and Verification of Security Protocols.
 Springer, 2012.
+DOI:~\url{https://doi.org/10.1007/978-3-540-78636-8}.
 
 \bibitem{basin2018}
 Basin~D., Cremers~C., Meadows~C.
 Model checking security protocols.
 In: Handbook of Model Checking. Springer, 2018, pp.~727--762.
+DOI:~\url{https://doi.org/10.1007/978-3-319-10575-8_22}.
 
 \bibitem{heyer2023}
 Heisler~B.
@@ -2243,7 +2266,7 @@ URL:~\url{https://github.com/bheisler/criterion.rs}.
 Svystun~S., Scis{\l}o~L., Pawlik~M., Melnychenko~O., Radiuk~P., Savenko~O., Sachenko~A.
 DyTAM: accelerating wind turbine inspections with dynamic UAV trajectory adaptation.
 Energies 18(7) (2025) 1823.
-DOI:~\url{https://doi.org/10.3390/en18071823}.
+URL:~\url{https://ouci.dntb.gov.ua/en/works/7pXNBeoR/}.
 
 \bibitem{svystun2024thermal}
 Svystun~S., Melnychenko~O., Radiuk~P., Savenko~O., Sachenko~A., Lysyi~A.
@@ -2255,7 +2278,7 @@ DOI:~\url{https://doi.org/10.47839/ijc.23.4.3752}.
 Lysyi~A., Sachenko~A., Radiuk~P., Lysyi~M., Melnychenko~O., Ishchuk~O., Savenko~O.
 Enhanced fire hazard detection in solar power plants: an integrated UAV, AI, and SCADA-based approach.
 Radioelectronic and Computer Systems (2) (2025) 99--117.
-DOI:~\url{https://doi.org/10.32620/reks.2025.2.06}.
+URL:~\url{https://openurl.ebsco.com/contentitem/doi%3A10.32620%2Freks.2025.2.06?id=ebsco%3Adoi%3A10.32620%2Freks.2025.2.06&sid=ebsco%3Aplink%3Acrawler}.
 
 \end{thebibliography}
 
