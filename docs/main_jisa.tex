@@ -1020,8 +1020,13 @@ In wire format, the message is $v \| \mathrm{KE2}$ and occupies
 
 KE3 is verified using a constant-time comparison routine. Upon success,
 the pair $(K_s, K_m)$ becomes available to both parties, thereby
-confirming mutual authentication. Upon failure, all key material is
-destroyed immediately via secure zeroization.
+confirming mutual authentication. Completion is fail closed: if KE3 is
+malformed, expired, or fails MAC verification after KE2 has been
+generated, no session key is exported; responder-held copies of $K_s$,
+$K_m$, $ss_{\mathrm{kem}}$, the expected initiator MAC, and the
+responder ephemeral secrets are zeroized; and the state becomes
+terminal or invalidated so the same KE2 state cannot be retried as an
+authentication oracle.
 
 \subsection{Inclusion of Post-Quantum Elements in the Transcript}
 
