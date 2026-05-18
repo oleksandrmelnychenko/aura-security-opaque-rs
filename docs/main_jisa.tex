@@ -560,9 +560,12 @@ keys.
 
 Hybrid PQ-OPAQUE is a hybrid post-quantum extension of
 OPAQUE~\cite{ietf-opaque}. The protocol preserves the defining
-property of augmented PAKE, namely that the server never learns the
-password, while adding a post-quantum component for the ``harvest now,
-decrypt later'' threat model. The protocol consists of two phases:
+property of augmented PAKE: in an honest execution, the password is
+neither transmitted to nor reconstructed by the record-holding remote
+node, which operates on blinded OPRF input and stores only the
+registration record. The construction adds a post-quantum component for
+the ``harvest now, decrypt later'' threat model. The protocol consists
+of two phases:
 \emph{registration} (a one-time phase) and
 \emph{authentication} (the three-message KE1--KE2--KE3 exchange).
 Throughout the sequel, the terms \emph{wire format} and \emph{payload}
