@@ -340,6 +340,8 @@ values into the same transcript that authenticates the classical
 exchange. This choice does not address every post-quantum PAKE problem,
 but it gives a concrete migration point whose wire format,
 implementation cost, and trust boundary can be measured.
+Table~\ref{tab:design-alternatives} records the alternatives considered
+and the reason for selecting the ephemeral ML-KEM path.
 
 \begin{table}[htbp]
 \caption{Hybridization strategies and their implications for this work}
@@ -455,6 +457,8 @@ number generation, password-reset workflows, denial-of-service
 economics, or microarchitectural side channels. These excluded cases
 are operationally important, but they require different mechanisms from
 the protocol-level construction studied here.
+Table~\ref{tab:threat-boundary} makes this boundary explicit for the
+main claims.
 
 \begin{table}[htbp]
 \caption{Threat-model boundary used for the main security claims}
@@ -563,6 +567,9 @@ decrypt later'' threat model. The protocol consists of two phases:
 \emph{authentication} (the three-message KE1--KE2--KE3 exchange).
 Throughout the sequel, the terms \emph{wire format} and \emph{payload}
 are used in the senses fixed in Table~\ref{tab:terminology}.
+Figure~\ref{fig:protocol-flow} gives the full message flow and marks
+where the post-quantum material and account context enter the
+authenticated transcript.
 
 \begin{figure}[htbp]
 \centering
@@ -620,6 +627,9 @@ message.}
 \label{fig:protocol-flow}
 \end{figure}
 
+Table~\ref{tab:primitives} fixes the concrete primitive choices used by
+the construction and by the implementation evaluated below.
+
 \begin{table}[htbp]
 \caption{Cryptographic primitives used in Hybrid PQ-OPAQUE}
 \label{tab:primitives}
@@ -641,6 +651,10 @@ Constant-time comparison & Bytewise without early exit & \codeid{subtle} & --- \
 \bottomrule
 \end{tabular*}
 \end{table}
+
+The authentication-message sizes in Table~\ref{tab:message-sizes}
+separate payload size from wire-format size; the latter includes the
+one-byte protocol version prefix.
 
 \begin{table}[htbp]
 \caption{Authentication-message sizes in payload and wire format}
@@ -878,6 +892,10 @@ $v \,\|\, \mathrm{KE1}$ occupies 1273~bytes.
     \mathrm{IKM}_{\mathrm{hyb}}).
   \label{eq:hybrid-prk}
 \end{align}
+
+Figure~\ref{fig:hybrid-key-schedule} shows the resulting dataflow from
+the classical 4DH terms, the ML-KEM shared secret, and the transcript
+hash into the derived session keys.
 
 \begin{figure}[htbp]
 \centering
@@ -1360,6 +1378,8 @@ details that remain the domain of implementation testing.
 Toolchain: Tamarin~1.10.0 (Maude~3.4). A surrogate model of the hybrid
 combiner was verified; the archived 4DH proof log records a total
 solving time of \textbf{53.84~seconds} for all eight lemmas.
+Table~\ref{tab:tamarin-lemmas} lists the verified lemmas and their
+main security interpretation.
 
 \begin{table}[htbp]
 \caption{Tamarin lemmas established for the surrogate 4DH model}
@@ -1444,6 +1464,8 @@ The protocol is implemented in \textbf{Rust~1.93.1} as a multi-crate
 workspace. Rust was selected for compile-time memory safety, the
 ability to keep the cryptographic core free of \codeid{unsafe} blocks,
 and the availability of mature secret-zeroization mechanisms.
+Table~\ref{tab:code-metrics} summarizes the implementation surface used
+for the evaluation.
 
 \begin{table}[htbp]
 \caption{Source-code metrics of the workspace}
@@ -1477,8 +1499,8 @@ The implementation is organized so that the main protocol statements in
 the paper can be checked against concrete artifacts rather than against
 informal intent. This traceability is not a proof of correctness, but it
 reduces the risk that the specification, implementation, benchmarks, and
-adapter documentation drift into describing different protocols. Table
-\ref{tab:traceability} summarizes the correspondence used in the
+adapter documentation drift into describing different protocols.
+Table~\ref{tab:traceability} summarizes the correspondence used in the
 artifact.
 
 \begin{table}[htbp]
@@ -1649,6 +1671,9 @@ post-quantum and classical key-exchange components remain sub-millisecond.}
 \label{fig:runtime-profile}
 \end{figure}
 
+Table~\ref{tab:micro-bench} gives the primitive-level measurements
+behind this profile.
+
 \begin{table}[htbp]
 \caption{Benchmark results for cryptographic primitives}
 \label{tab:micro-bench}
@@ -1690,6 +1715,9 @@ authentication latency. Third, the hybrid key-extraction procedure
 constitute a separate bottleneck.
 
 \subsection{Protocol-Level Benchmarks}
+
+Table~\ref{tab:protocol-bench} reports the corresponding protocol-level
+Criterion workloads.
 
 \begin{table}[htbp]
 \caption{Benchmark results for protocol-level scenarios}
@@ -1766,6 +1794,8 @@ unchanged. Within the present threat model, explicit compromise of the
 final key material is not reducible to weakening the classical
 contribution alone; it is interpreted as requiring compromise of both the
 classical and post-quantum layers.
+Table~\ref{tab:baseline-comparison} states the same comparison in
+structural form.
 
 \begin{table}[htbp]
 \caption{Comparison of Hybrid PQ-OPAQUE with canonical 3DH-OPAQUE}
@@ -1804,6 +1834,8 @@ computational proof. This distinction is important because the paper is
 not claiming that the implementation is machine-verified; it claims that
 the design, models, tests, and measurements are mutually consistent
 under the stated assumptions.
+Table~\ref{tab:claim-scope} separates these claims from their
+boundaries.
 
 \begin{table}[htbp]
 \caption{Scope of the main claims and supporting evidence}
