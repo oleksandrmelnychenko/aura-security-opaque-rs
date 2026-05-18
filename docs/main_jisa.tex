@@ -70,6 +70,7 @@
 \newcommand{\Label}[1]{L_{\mathrm{#1}}}
 \newcommand{\KLabel}[1]{\Lambda_{\mathrm{#1}}}
 \newcommand{\codeid}[1]{\textsf{#1}}
+\newcommand{\Len}{\operatorname{len}}
 
 % ── Theorem environments ─────────────────────────────────────
 \newtheorem{definition}{Definition}[section]
@@ -151,8 +152,8 @@ The analysis is organized around four questions: whether ML-KEM-768 can be incor
         format fixes a one-byte version prefix and exact message sizes.
   \item \textbf{Layered formal and implementation support.} Reduction sketches, two
         ProVerif models, a Tamarin model with a surrogate 4DH
-        representation, and Rust tests are aligned to the same
-        construction and the same threat-model boundaries.
+        representation, and executable conformance tests are aligned
+        to the same construction and the same threat-model boundaries.
   \item \textbf{Executable artifact and measurements.}
         The artifact contains implementation code, tests, and modules
         for micro-benchmarking, protocol-level benchmarking, and
@@ -162,12 +163,6 @@ The analysis is organized around four questions: whether ML-KEM-768 can be incor
         KSF, while Argon2id remains the main contributor to
         end-to-end latency.
 \end{enumerate}
-
-% FIGURE SLOT F1 (optional overview, see docs/FIGURE_PLAN.md):
-% Place a one-page visual overview here only if the final version needs a
-% high-level reader map before the technical sections. The figure should show
-% the protocol specification, symbolic models, reference implementation, tests,
-% and benchmarks as separate evidence layers, not as one undifferentiated proof.
 
 \subsection{Terminology}
 
@@ -241,7 +236,7 @@ Non-equivalent server record & No & Partial & No & Yes \\
 Pre-computation resistance & No & No & No & Yes \\
 Forward secrecy & Yes & Yes & Yes & Yes \\
 Resistance to server-record compromise & No & Partial & No & In the passive-database model \\
-Formal security proof & IC & None & ROM & UC \\
+Formal security proof & Ideal-cipher model & None & ROM & UC \\
 Quantum resistance & No & No & No & No \\
 \bottomrule
 \end{tabularx}
@@ -487,11 +482,53 @@ absence of side channels or memory-safety bugs in external crates. \\
 \end{tabularx}
 \end{table}
 
-% FIGURE SLOT F2 (optional but useful, see docs/FIGURE_PLAN.md):
-% A compact threat-boundary diagram can be placed here if the final article
-% needs a visual distinction between database compromise, OPRF-root compromise,
-% active network control, post-session long-term key exposure, and quantum DH
-% recovery. The diagram must not introduce claims beyond Table~\ref{tab:threat-boundary}.
+\begin{figure}[htbp]
+\centering
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\small,
+  >=Stealth,
+  included/.style={draw,rounded corners=2pt,fill=eclgreen!9,
+    minimum width=3.25cm,minimum height=0.75cm,align=center},
+  excluded/.style={draw,rounded corners=2pt,fill=eclred!8,
+    minimum width=3.25cm,minimum height=0.75cm,align=center},
+  core/.style={draw,rounded corners=2pt,fill=eclblue!8,
+    minimum width=3.65cm,minimum height=0.92cm,align=center,font=\bfseries},
+  arrow/.style={-{Stealth[length=2mm]},thick}
+]
+  \node[core] (protocol) at (0,0) {Hybrid PQ-OPAQUE\\claim surface};
+
+  \node[included] (network) at (-5.3,1.8) {active network\\control};
+  \node[included] (database) at (-5.3,0.6) {passive database\\disclosure};
+  \node[included] (ltkeys) at (-5.3,-0.6) {post-session\\long-term keys};
+  \node[included] (quantum) at (-5.3,-1.8) {quantum recovery\\of classical DH};
+
+  \node[excluded] (oprf) at (5.3,1.5) {$\sigoprf$ compromise};
+  \node[excluded] (endpoint) at (5.3,0.3) {live endpoint\\compromise};
+  \node[excluded] (rng) at (5.3,-0.9) {malicious RNG and\\side channels};
+  \node[excluded] (dos) at (5.3,-2.1) {resource-exhaustion\\availability};
+
+  \foreach \x in {network,database,ltkeys,quantum} {
+    \draw[arrow,eclgreen!70!black] (\x.east) -- (protocol.west);
+  }
+  \foreach \x in {oprf,endpoint,rng,dos} {
+    \draw[arrow,eclred!70!black] (protocol.east) -- (\x.west);
+  }
+
+  \node[anchor=south,font=\scriptsize\bfseries,text=eclgreen!45!black]
+    at (-5.3,2.42) {inside the paper's claims};
+  \node[anchor=south,font=\scriptsize\bfseries,text=eclred!65!black]
+    at (5.3,2.12) {requires separate analysis};
+\end{tikzpicture}
+}
+\caption{Threat-boundary map for the main claims. The construction is
+analyzed against active network control, database disclosure, post-session
+long-term key exposure, and later quantum recovery of classical DH terms.
+Compromise of the OPRF root secret, live endpoint compromise, malicious
+randomness, side channels, and availability attacks are outside the claim
+surface.}
+\label{fig:threat-boundary-map}
+\end{figure}
 
 \textbf{Protocol requirements:}
 \begin{description}
@@ -717,10 +754,6 @@ remains essentially unchanged.}
 \label{fig:wire-size-growth}
 \end{figure}
 
-% FIGURE SLOT F4 (already implemented): Figure~\ref{fig:wire-size-growth}
-% is the current wire-size-growth figure. Keep it unless a cleaner external
-% vector graphic replaces the TikZ version.
-
 Figure~\ref{fig:wire-size-growth} shows that the post-quantum layer
 leaves finalization almost unchanged while increasing the transport
 budget of the first two messages, namely the phases that carry
@@ -801,11 +834,20 @@ unsupported versions. The protocol also uses an explicit account
 identifier $\acct$, a stable byte string naming the account, treated not
 merely as a database lookup key but as cryptographic context.
 
-Define the account-context hash as
+Define the account-context hash as a length-prefixed binding of the
+wire-format version and the account identifier:
 \begin{equation}
-  \eta = H\!\bigl(\Label{ctx} \| \acct\bigr).
+  \eta =
+  H\!\bigl(
+    \Label{ctx} \,\|\, \Len(v) \,\|\, v \,\|\,
+    \Len(\acct) \,\|\, \acct
+  \bigr).
   \label{eq:acct-context}
 \end{equation}
+Here $\Len(\cdot)$ denotes the canonical byte-length encoding used by
+the transcript serializer. The length prefixes prevent ambiguity between
+the version field and account bytes, while the inclusion of $v$ prevents
+two wire-format versions from sharing the same account context.
 Distinct domain-separation labels separate the baseline OPRF, KSF, and
 transcript contexts from the added account-binding and hybrid-combiner
 contexts. The version indices embedded in these labels are local domain
@@ -872,8 +914,10 @@ $v \,\|\, \mathrm{KE1}$ occupies 1273~bytes.
 
 \textbf{Extended transcript} (including post-quantum elements):
 \begin{align}
-  \tau &= E_C \| E_S \| n_C \| n_S \| PK_C \| PK_S \|
-         \mathrm{CredResp} \| pk_{\mathrm{kem}} \| ct_{\mathrm{kem}} \| \eta,
+  \tau &= E_C \,\|\, E_S \,\|\, n_C \,\|\, n_S
+         \,\|\, PK_C \,\|\, PK_S \,\|\,
+         \mathrm{CredResp} \,\|\, pk_{\mathrm{kem}}
+         \,\|\, ct_{\mathrm{kem}} \,\|\, \eta,
          \notag\\
   \tau_H &= H\!\bigl(L_{\tau} \| \tau\bigr).
   \label{eq:hybrid-transcript}
@@ -1329,7 +1373,7 @@ that exercises serialization, state handling, and external-call behavior
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{cL{4cm}lll}
 \toprule
-\# & Property & ProVerif & Tamarin (surrogate 4DH model) & Rust tests \\
+\# & Property & ProVerif & Tamarin (surrogate 4DH model) & Executable tests \\
 \midrule
 P1 & Session-key secrecy & \textbf{confirmed} & \textbf{confirmed} (27 steps) & 4 tests \\
 P2 & Password secrecy on the wire & \textbf{confirmed} & \textbf{confirmed} (3 steps) & 6 tests \\
@@ -1348,11 +1392,6 @@ P7 & Resistance to offline guessing & --- & \textbf{supported for the database m
 }
 \end{table}
 
-% FIGURE SLOT F6 (optional evidence map, see docs/FIGURE_PLAN.md):
-% Add a small evidence-map figure here only if the verification section feels
-% too table-heavy. It should map P1--P7 to ProVerif, Tamarin, and Rust tests,
-% while preserving the limits stated in the text.
-
 Table~\ref{tab:verification-summary} combines symbolic and
 implementation-level checks to show which claims are supported at which
 layer. ProVerif is most useful for message logic and correspondence
@@ -1368,7 +1407,7 @@ to the implementation behavior that would be exercised by callers.
 
 \subsubsection{ProVerif 2.05}
 
-Toolchain: ProVerif~2.05 (OCaml~5.4.0), macOS Darwin~25.2.0. Two
+Toolchain: ProVerif~2.05 with OCaml~5.4.0. Two
 complementary models were used: a baseline secrecy model and a separate
 authentication model, both archived in the accompanying artifact
 package. The split into two models is deliberate: a single saturated
@@ -1456,7 +1495,7 @@ recorded.
         aggregate of two mutually consistent models rather than as a
         monolithic proof.
   \item \textbf{Boundary of offline-resistance claims.} Lemma P7 and the
-        corresponding Rust tests cover database compromise \emph{without}
+        corresponding executable tests cover database compromise \emph{without}
         compromise of $\sigoprf$. If $\sigoprf$ is exposed, the
         offline-resistance property requires separate analysis and
         should not be transferred automatically from the model.
@@ -1501,11 +1540,6 @@ Formal models & & 1806 & Tamarin, ProVerif \\
 \bottomrule
 \end{tabular*}
 \end{table}
-
-% FIGURE SLOT F7 (optional implementation architecture, see docs/FIGURE_PLAN.md):
-% Add a component diagram here if space permits: opaque-core, opaque-agent,
-% opaque-relay, opaque-ffi, tests, benchmarks, and formal models. Keep it as a
-% reference-implementation map rather than a deployment architecture.
 
 \subsection{Specification-to-Implementation Traceability}
 
@@ -1553,7 +1587,7 @@ collapsed into generic authentication failure. \\
 \end{table}
 
 The important point is methodological. The symbolic models describe the
-message structure and compromise assumptions; the Rust tests check
+message structure and compromise assumptions; the executable tests check
 whether the executable state machine follows the same message sizes,
 labels, version handling, and rejection behavior; and the adapter
 documentation exposes the subset of those contracts that external
@@ -1590,7 +1624,8 @@ following values are zeroized:
   \item the ephemeral ML-KEM secret after decapsulation;
   \item the classical 4DH material, the transcript hash, and the PRK
         after derivation of descendant keys;
-  \item the context hash of $\acct$ after completion of KE2/KE3;
+  \item the account-and-version context hash $\eta$ after completion of
+        KE2/KE3;
   \item the initiator and responder state structures upon interruption
         or any rejected completion path.
 \end{itemize}
@@ -1604,7 +1639,7 @@ protocol lifecycle, wire format, external API contract, OPRF/KEM correctness,
 and secure rejection of invalid states.
 
 These checks complement the symbolic analysis rather than duplicate it.
-Rust tests exercise serialization, version handling, state-lifecycle
+Executable tests exercise serialization, version handling, state-lifecycle
 invariants, and input-boundary conditions in the executable
 implementation; Criterion~0.5.1 benchmarks~\cite{heyer2023} quantify
 the cost of the main primitives and protocol phases; archived ProVerif
@@ -1623,11 +1658,6 @@ benchmark suite, and the formal models gives an independent check on the
 main quantitative and structural claims reported here.
 
 \subsection{Benchmarks of Cryptographic Primitives}
-
-% FIGURE SLOT F8 (optional runtime profile, see docs/FIGURE_PLAN.md):
-% The benchmark tables below use the refreshed Linux/Xeon measurements.
-% A log-scale runtime profile can compare Argon2id, ML-KEM full round,
-% 4DH, KE2, KE3, and end-to-end authentication on the same platform.
 
 Figure~\ref{fig:runtime-profile} summarizes the scale separation before
 the detailed benchmark tables.
@@ -2013,19 +2043,17 @@ studied, measured, and compared against independent implementations.
 \section*{Artifact Availability}
 % ============================================================
 
-The implementation and verification artifact is available as a public
-source artifact:
-\begin{center}
-\url{https://github.com/oleksandrmelnychenko/aura-security-opaque-rs}
-\end{center}
-The Rust workspace contains the protocol crates, deterministic and
-property-oriented tests, external API bindings, and benchmark harnesses. The
-formal directory contains the ProVerif and Tamarin models together with
-archived verification logs. For the artifact state described in this
-paper, the Rust workspace test run reports 157 passed tests and one
-intentionally ignored slow regression, while the archived symbolic
-evidence records 5/5 ProVerif queries and 8/8 Tamarin lemmas for the
-documented models.
+The implementation and verification artifact is maintained as an
+accompanying source package. For review, release, or archival purposes it
+should be supplied as a source bundle, versioned source snapshot, or
+DOI-backed archive corresponding to the revision described in this paper. The Rust
+workspace contains the protocol crates, deterministic and property-oriented
+tests, external API bindings, and benchmark harnesses. The formal directory
+contains the ProVerif and Tamarin models together with archived
+verification logs. For the artifact state described in this paper, the
+Rust workspace test run reports 157 passed tests and one intentionally
+ignored slow regression, while the archived symbolic evidence records 5/5
+ProVerif queries and 8/8 Tamarin lemmas for the documented models.
 
 The artifact is intended to make the boundary between specification and
 implementation inspectable. Message sizes, transcript fields, labels,
@@ -2040,8 +2068,8 @@ contracts rather than against the prose alone.
 % ============================================================
 
 OpenAI Codex was used during manuscript preparation to assist with
-English-language drafting assistance, stylistic revision, and minor
-\LaTeX{} typesetting support in portions of the abstract, introduction,
+English-language editing, consistency checks, and minor \LaTeX{}
+typesetting support in portions of the abstract, introduction,
 discussion, conclusion, and related connective prose. The system was not
 used as an authoritative source for technical claims. All protocol
 descriptions, equations, references, tables, implementation details, and
