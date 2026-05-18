@@ -458,7 +458,7 @@ Quantum attack on classical DH & Classical DH terms may be treated as
 recoverable in the long-term migration argument & The post-quantum
 layer is then relied upon under the ML-KEM assumption. \\
 Implementation behavior & Serialization, state lifecycle, version
-handling, and FFI errors are checked by tests & Tests do not establish
+handling, and external-adapter errors are checked by tests & Tests do not establish
 absence of side channels or memory-safety bugs in external crates. \\
 \bottomrule
 \end{tabularx}
@@ -1046,11 +1046,11 @@ symbolic models do not analyze microarchitectural leakage.
 The protocol was analyzed with two symbolic tools in the Dolev--Yao
 model: ProVerif~2.05 and Tamarin~Prover~1.10.0. The purpose of this
 analysis is to check the structure of the protocol argument, not to
-certify the Rust/FFI implementation line by line. ProVerif is used in
+certify the Rust implementation line by line. ProVerif is used in
 separate secrecy and authentication models, whereas Tamarin is applied
 to a verified surrogate 4DH model. The results are therefore read
 together with the modeling boundaries and with the executable artifact
-that exercises serialization, state handling, and FFI behavior
+that exercises serialization, state handling, and external-call behavior
 \cite{cremers2012,basin2018}.
 
 \begin{table}[htbp]
@@ -1181,7 +1181,7 @@ recorded.
         should not be transferred automatically from the model.
   \item \textbf{Gap between model and implementation.} Symbolic
         verification does not cover side channels, compiler behavior,
-        memory-allocation properties, FFI API mistakes, or
+        memory-allocation properties, external-API mistakes, or
         vulnerabilities in external crates. For this reason, the formal
         results reported here complement tests and benchmarks rather than
         substituting for them.
@@ -1209,7 +1209,7 @@ Component & Role & LoC & Principal dependencies \\
 \textbf{Cryptographic core} & Primitives, key derivation, and protocol serialization & 1513 & Ristretto255, ML-KEM, Argon2id \\
 \textbf{Client pipeline} & Initiator logic and client-side protocol phases & 900 & cryptographic core \\
 \textbf{Server pipeline} & Responder logic and session completion & 907 & cryptographic core \\
-\textbf{Interlanguage layer} & FFI interface and external protocol invocation & 2026 & client and server pipelines \\
+\textbf{Interlanguage layer} & External API adapter and protocol invocation & 2026 & client and server pipelines \\
 \midrule
 \textbf{Total (main code)} & & \textbf{5346} & \\
 Tests & & 4116 & property-based and regression scenarios \\
@@ -1225,7 +1225,7 @@ The implementation is organized so that the main protocol statements in
 the paper can be checked against concrete artifacts rather than against
 informal intent. This traceability is not a proof of correctness, but it
 reduces the risk that the specification, implementation, benchmarks, and
-FFI documentation drift into describing different protocols. Table
+adapter documentation drift into describing different protocols. Table
 \ref{tab:traceability} summarizes the correspondence used in the
 artifact.
 
@@ -1239,7 +1239,7 @@ Specification element & Implementation locus & Artifact check \\
 \midrule
 Wire-format lengths and version prefix & Core type constants and
 protocol serialization/parsing routines & Unit tests reject short,
-long, and unsupported-version messages; FFI length accessors expose the
+long, and unsupported-version messages; public length accessors expose the
 same 1273/1377/65-byte authentication sizes. \\
 Account-bound OPRF derivation & OPRF and registration/envelope modules
 shared by the agent and relay crates & OPRF, envelope, and registration
@@ -1253,11 +1253,11 @@ Transcript binding of PQ material and $\acct$ & Authentication-state
 construction on both endpoints & Negative tests mutate transcript-bound
 fields and require authentication failure rather than silent divergence. \\
 State lifetime and zeroization boundary & Agent state, relay state, and
-FFI lifecycle wrappers & Regression tests check state consumption,
+external-adapter lifecycle wrappers & Regression tests check state consumption,
 rejection after invalid transitions, and safe release paths across the
 C ABI boundary. \\
-Public FFI error contract & Agent and relay FFI modules plus the public
-FFI documentation & FFI lifecycle tests verify that unsupported protocol
+Public external error contract & Agent and relay adapter modules plus the public
+adapter documentation & Adapter lifecycle tests verify that unsupported protocol
 versions remain distinguishable at the ABI boundary instead of being
 collapsed into generic authentication failure. \\
 \bottomrule
@@ -1267,7 +1267,7 @@ collapsed into generic authentication failure. \\
 The important point is methodological. The symbolic models describe the
 message structure and compromise assumptions; the Rust tests check
 whether the executable state machine follows the same message sizes,
-labels, version handling, and rejection behavior; and the FFI
+labels, version handling, and rejection behavior; and the adapter
 documentation exposes the subset of those contracts that external
 callers must obey. This separation makes the artifact more directly
 auditable because cryptographic claims, implementation invariants, and
@@ -1281,7 +1281,7 @@ primitives but also on the discipline with which secrets are handled in
 process memory. In the implementation studied here, the
 cryptographic core and both protocol pipelines are compiled under a
 strict no-\codeid{unsafe}-code policy, whereas operations that require
-low-level pointer manipulation are confined to a narrow FFI boundary.
+low-level pointer manipulation are confined to a narrow external-call boundary.
 Such architectural separation does not replace formal analysis of the
 implementation, but it limits the defect surface at the
 memory-management boundary: use-after-free defects, double release,
@@ -1312,7 +1312,7 @@ following values are zeroized:
 The evaluated revision of the workspace contains 157 passing tests and
 1 deliberately ignored slow regression scenario. The package includes
 unit, integration, property-based, and regression tests for the
-protocol lifecycle, wire format, FFI contract, OPRF/KEM correctness,
+protocol lifecycle, wire format, external API contract, OPRF/KEM correctness,
 and secure rejection of invalid states.
 
 These checks complement the symbolic analysis rather than duplicate it.
@@ -1480,7 +1480,7 @@ addresses secrecy and correspondence in symbolic models, Tamarin records
 stateful properties of the surrogate 4DH construction, and the Rust test
 suite checks executable behavior that symbolic tools do not model:
 serialization, state lifetime, boundary checks, version handling, and the
-FFI contract. These layers point to the same protocol description, but
+external API contract. These layers point to the same protocol description, but
 they do not have the same evidentiary status.
 
 The least automatic part of the argument is the AND-style reading of the
@@ -1566,7 +1566,7 @@ Operational compatibility also matters.
 Authentication interacts with login-attempt limits, logging, account
 recovery, anti-fraud analysis, and audit requirements. The
 implementation therefore emphasizes deterministic serialization,
-explicit version checking, and stable FFI boundaries. Failure modes
+explicit version checking, and stable external-call boundaries. Failure modes
 should also remain distinguishable: cryptographic failure,
 version-negotiation failure, and transport failure have different
 operational meanings, and collapsing them into a generic failed login
@@ -1580,7 +1580,7 @@ and SCADA-linked telemetry~\cite{svystun2025dytam,svystun2024thermal,lysyi2025fi
 The artifact is useful because it forces the specification to meet the
 implementation boundary. The same wire sizes, transcript fields, key
 schedule, and error paths appear in the paper, the Rust crates, and the
-FFI documentation. This makes it possible to compare the written
+adapter documentation. This makes it possible to compare the written
 protocol against executable behavior rather than treating the paper and
 the implementation as separate claims.
 
@@ -1652,11 +1652,13 @@ studied, measured, and compared against independent implementations.
 \section*{Artifact Availability}
 % ============================================================
 
-The implementation and verification artifact is maintained with the
-source repository at
-\url{https://github.com/oleksandrmelnychenko/aura-security-opaque-rs}.
+The implementation and verification artifact is available as a public
+source artifact:
+\begin{center}
+\url{https://github.com/oleksandrmelnychenko/aura-security-opaque-rs}
+\end{center}
 The Rust workspace contains the protocol crates, deterministic and
-property-oriented tests, FFI bindings, and benchmark harnesses. The
+property-oriented tests, external API bindings, and benchmark harnesses. The
 formal directory contains the ProVerif and Tamarin models together with
 archived verification logs. For the artifact state described in this
 paper, the Rust workspace test run reports 157 passed tests and one
@@ -1667,8 +1669,8 @@ documented models.
 The artifact is intended to make the boundary between specification and
 implementation inspectable. Message sizes, transcript fields, labels,
 version checks, and error conventions are represented in both the paper
-and the executable code. The repository also retains supporting
-documentation for the FFI layer and reproducibility workflow, so that
+and the executable code. The artifact also retains supporting
+documentation for the external API layer and reproducibility workflow, so that
 future revisions can be checked against the same implementation-level
 contracts rather than against the prose alone.
 
@@ -1852,7 +1854,7 @@ In: Proceedings of IEEE European Symposium on Security and Privacy, 2016, pp.~29
 \bibitem{heyer2023}
 Heisler~B.
 Criterion.rs: statistics-driven micro-benchmarking in Rust.
-GitHub repository.
+Project site.
 URL:~\url{https://github.com/bheisler/criterion.rs}.
 
 \bibitem{beguinet2023}
