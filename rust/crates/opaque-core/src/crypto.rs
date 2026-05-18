@@ -253,7 +253,7 @@ pub fn derive_oprf_key(
     type HmacSha512 = Hmac<Sha512>;
     let mut mac_out = [0u8; MAC_LENGTH];
 
-    for counter in 0u8..255 {
+    for counter in 0u8..=255 {
         let mut mac = <HmacSha512 as Mac>::new_from_slice(&oprf_seed)
             .map_err(|_| OpaqueError::CryptoError)?;
         mac.update(labels::OPRF_KEY_INFO);
