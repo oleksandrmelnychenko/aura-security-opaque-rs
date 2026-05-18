@@ -262,7 +262,7 @@ function (OPRF). Standard IETF OPAQUE uses triple Diffie--Hellman
 $dh_1 = sk_S \cdot PK_C$ (mutual authentication),
 $dh_2 = sk_S \cdot E_C$,
 $dh_3 = e_S \cdot PK_C$ (forward secrecy).
-The construction analyzed here adds a fourth product,
+The construction analyzed here adds a fourth Diffie--Hellman term,
 $dh_4 = e_S \cdot E_C$. This term binds the two ephemeral components
 within a single transcript and, at the level of 4DH intuition, is
 intended to complicate UKS-like substitutions; here it is treated as a
