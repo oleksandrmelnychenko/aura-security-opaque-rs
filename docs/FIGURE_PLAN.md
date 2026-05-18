@@ -158,20 +158,20 @@ Recommended caption:
 
 ## F8 — Server Benchmark Runtime Profile
 
-Placement: before or after Table `tab:micro-bench`; update after the Linux/Xeon benchmark refresh.
+Placement: before or after Table `tab:micro-bench`.
 
-Status: recommended after replacing the Apple M1 data.
+Status: optional; benchmark tables were refreshed on the Linux/Xeon host on 2026-05-18.
 
 Purpose: make the performance result immediately legible: Argon2id dominates latency; ML-KEM and 4DH remain sub-millisecond.
 
 Content:
 - platform label: Linux, Intel Xeon E5-2650 v4, 2 sockets, 24 cores / 48 threads
-- Argon2id MODERATE
-- ML-KEM-768 full round
-- Ristretto255 4DH
-- KE2 generation
-- KE3 generation
-- end-to-end authentication
+- Argon2id MODERATE: 841.37 ms
+- ML-KEM-768 full round: 492.30 us
+- Ristretto255 4DH protocol profile: 245.57 us
+- KE2 generation: 592.69 us
+- KE3 generation: 1.101 s
+- end-to-end authentication: 836.11 ms
 - use a log-scale horizontal bar chart if both microseconds and milliseconds appear in one figure
 
 Recommended caption:

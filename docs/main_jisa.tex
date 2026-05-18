@@ -107,7 +107,7 @@ This paper specifies Hybrid PQ-OPAQUE, an OPAQUE-based construction in which ML-
 
 The analysis combines ProVerif~2.05, a surrogate 4DH model in Tamarin~Prover~1.10.0, and a reference implementation in Rust validated by deterministic, integration, and property-oriented tests. The formal results are interpreted within explicit boundaries: they do not constitute a machine-checked proof of the implementation, and the offline-resistance claim is limited to compromise of the server database without compromise of $\sigoprf$.
 
-On Apple~M1~Pro, end-to-end authentication takes 481.43~ms, a full ML-KEM-768 round costs 122.01~$\mu$s, and Argon2id is the main latency component. The post-quantum layer adds 159.3~$\mu$s to the key-exchange path without the KSF and increases the handshake size to 2715~bytes while preserving the three-message interaction profile. Relative to classical OPAQUE, the construction adds limited computation for honest parties while moving most overhead to message expansion.
+On the Linux/Xeon benchmark platform used for this paper, end-to-end authentication takes 836.11~ms, a full ML-KEM-768 round costs 492.30~$\mu$s, and Argon2id is the main latency component. The post-quantum layer adds 379.45~$\mu$s to the KSF-free key-exchange path and increases the handshake size to 2715~bytes while preserving the three-message interaction profile. Relative to classical OPAQUE, the construction adds limited computation for honest parties while moving most overhead to message expansion.
 \end{abstract}
 
 \begin{keyword}
@@ -158,7 +158,7 @@ The analysis is organized around four questions: whether ML-KEM-768 can be incor
         for micro-benchmarking, protocol-level benchmarking, and
         throughput assessment.
   \item \textbf{Measured empirical overheads.} The post-quantum layer
-        increases key-exchange CPU cost by 159.3~$\mu$s without the
+        increases key-exchange CPU cost by 379.45~$\mu$s without the
         KSF, while Argon2id remains the main contributor to
         end-to-end latency.
 \end{enumerate}
@@ -1183,7 +1183,7 @@ operate: (1)~OPRF, because without the responder-side OPRF key
 $k_{\mathrm{oprf}}$ the adversary cannot compute $\mathrm{rwd}$;
 (2)~Argon2id with MODERATE parameters (256~MiB, 3 iterations), for
 which one guess costs approximately
-$T_{\mathrm{guess}} \approx 0.5$~s on the benchmarking platform, so a
+$T_{\mathrm{guess}} \approx 0.84$~s on the benchmarking platform, so a
 sequential exhaustive dictionary search scales as
 $C_{\mathrm{offline}} \approx |\mathcal{D}| \cdot T_{\mathrm{guess}}$;
 and (3)~XSalsa20-Poly1305, because verification of a candidate requires
@@ -1516,9 +1516,10 @@ the cost of the main primitives and protocol phases; archived ProVerif
 and Tamarin models document the formal abstractions used for the
 security claims.
 
-Benchmarking was performed on an Apple~M1~Pro platform
-(8 performance + 2 efficiency cores, 16~GB LPDDR5, macOS~26.2,
-Rust~1.93.1) in deterministic single-threaded optimized-build mode.
+Benchmarking was performed on a Linux server with two
+Intel~Xeon~E5-2650~v4 processors (24 physical cores, 48 hardware
+threads, 60~MiB aggregate L3 cache, Ubuntu kernel~6.8.0-111,
+Rust~1.93.1) in deterministic optimized-build mode.
 Criterion applies bootstrap estimation of the mean and the 95\%
 confidence interval; the values reported below should be interpreted
 as reproducible estimates for this platform rather than as universal
@@ -1528,10 +1529,10 @@ main quantitative and structural claims reported here.
 
 \subsection{Benchmarks of Cryptographic Primitives}
 
-% FIGURE SLOT F8 (recommended after benchmark-host refresh, see docs/FIGURE_PLAN.md):
-% Add a runtime profile figure once the benchmark tables are regenerated on the
-% Linux/Xeon host. It should compare Argon2id, ML-KEM full round, 4DH, KE2,
-% KE3, and end-to-end authentication on the same platform.
+% FIGURE SLOT F8 (optional runtime profile, see docs/FIGURE_PLAN.md):
+% The benchmark tables below use the refreshed Linux/Xeon measurements.
+% A log-scale runtime profile can compare Argon2id, ML-KEM full round,
+% 4DH, KE2, KE3, and end-to-end authentication on the same platform.
 
 \begin{table}[htbp]
 \caption{Benchmark results for cryptographic primitives}
@@ -1541,36 +1542,36 @@ main quantitative and structural claims reported here.
 \toprule
 Primitive & Operation & $\hat{\mu}$ & 95\% CI \\
 \midrule
-Ristretto255 & Key-pair generation & 16.74~$\mu$s & [16.03; 17.84] \\
-Ristretto255 & Single DH & 46.41~$\mu$s & [45.94; 46.98] \\
-Ristretto255 & 3DH (baseline) & 119.04~$\mu$s & [117.10; 122.14] \\
-Ristretto255 & \textbf{4DH (protocol)} & $\approx\mathbf{164}$~\textbf{$\mu$s} & [$\approx$162; $\approx$167] \\
-ML-KEM-768 & Key-pair generation & 41.05~$\mu$s & [40.69; 41.68] \\
-ML-KEM-768 & Encapsulation & 33.62~$\mu$s & [32.89; 34.95] \\
-ML-KEM-768 & Decapsulation & 38.55~$\mu$s & [37.65; 40.11] \\
-ML-KEM-768 & \textbf{Full round} & \textbf{122.01~$\mu$s} & [119.32; 126.96] \\
-OPRF & Blinding & 56.16~$\mu$s & [54.37; 59.36] \\
-OPRF & Responder evaluation & 47.59~$\mu$s & [44.97; 52.45] \\
-OPRF & Finalization & 65.68~$\mu$s & [64.17; 67.89] \\
-HKDF & Extract & 1.32~$\mu$s & [1.312; 1.319] \\
-HKDF & Expand (64~bytes) & 1.21~$\mu$s & [1.181; 1.245] \\
-HMAC-SHA-512 & 256~bytes & 1.61~$\mu$s & [1.596; 1.641] \\
-XSalsa20-Poly1305 & Encrypt 96~bytes & 440.79~ns & [430.20; 459.46] \\
-XSalsa20-Poly1305 & Decrypt 96~bytes & 613.42~ns & [594.15; 636.12] \\
-Argon2id & \textbf{MODERATE} & \textbf{510.86~ms} & [490.31; 533.80] \\
-Hybrid combiner & HKDF-Extract (160~bytes) & 1.48~$\mu$s & [1.453; 1.508] \\
+Ristretto255 & Key-pair generation & 41.85~$\mu$s & [39.47; 44.28] \\
+Ristretto255 & Single DH & 75.93~$\mu$s & [74.11; 77.90] \\
+Ristretto255 & 3DH (baseline) & 262.54~$\mu$s & [258.50; 266.58] \\
+Ristretto255 & \textbf{4DH (protocol profile)} & \textbf{245.57~$\mu$s} & [242.98; 249.55] \\
+ML-KEM-768 & Key-pair generation & 151.48~$\mu$s & [147.39; 155.63] \\
+ML-KEM-768 & Encapsulation & 146.50~$\mu$s & [142.58; 150.51] \\
+ML-KEM-768 & Decapsulation & 172.74~$\mu$s & [168.74; 176.75] \\
+ML-KEM-768 & \textbf{Full round} & \textbf{492.30~$\mu$s} & [479.59; 505.34] \\
+OPRF & Blinding & 115.63~$\mu$s & [113.63; 117.64] \\
+OPRF & Responder evaluation & 76.39~$\mu$s & [74.95; 77.85] \\
+OPRF & Finalization & 109.11~$\mu$s & [107.29; 110.91] \\
+HKDF & Extract & 3.63~$\mu$s & [3.52; 3.74] \\
+HKDF & Expand (64~bytes) & 2.26~$\mu$s & [2.20; 2.33] \\
+HMAC-SHA-512 & 256~bytes & 2.92~$\mu$s & [2.90; 2.94] \\
+XSalsa20-Poly1305 & Encrypt 96~bytes & 2.52~$\mu$s & [2.49; 2.57] \\
+XSalsa20-Poly1305 & Decrypt 96~bytes & 2.67~$\mu$s & [2.66; 2.69] \\
+Argon2id & \textbf{MODERATE} & \textbf{841.37~ms} & [830.54; 851.96] \\
+Hybrid combiner & HKDF-Extract (160~bytes) & 2.49~$\mu$s & [2.47; 2.50] \\
 \bottomrule
 \end{tabular*}
 \end{table}
 
 The micro-benchmarks show three stable relationships. First, the full
-ML-KEM-768 round ($122.01~\mu$s) and 4DH
-($\approx 164~\mu$s) lie in the same order of magnitude, so the
+ML-KEM-768 round ($492.30~\mu$s) and the measured 4DH protocol profile
+($245.57~\mu$s) remain sub-millisecond operations, so the
 post-quantum layer does not alter the computational class of the
-protocol. Second, Argon2id ($510.86$~ms in isolated measurement)
+protocol. Second, Argon2id ($841.37$~ms in isolated measurement)
 dominates all other components and determines the perceived
 authentication latency. Third, the hybrid key-extraction procedure
-($1.48~\mu$s) is negligible relative to the KSF and does not
+($2.49~\mu$s) is negligible relative to the KSF and does not
 constitute a separate bottleneck.
 
 \subsection{Protocol-Level Benchmarks}
@@ -1581,46 +1582,42 @@ constitute a separate bottleneck.
 \centering\scriptsize
 \begin{tabularx}{\textwidth}{@{}L{2cm}L{3.8cm}rrX@{}}
 \toprule
-Phase & Measurement scenario & $\hat{\mu}$ & 95\% CI & Dominant component \\
+Phase & Measurement scenario & $\hat{\mu}$ & 95\% CI & Main cost \\
 \midrule
-Registration & Registration-request creation & 72.46~$\mu$s & [72.15; 72.77] & OPRF blinding \\
-Registration & Remote-node response creation & 45.92~$\mu$s & [45.72; 46.16] & OPRF evaluation \\
-Registration & Registration completion & \textbf{479.58~ms} & [472.11; 487.75] & \textbf{Argon2id} \\
-Authentication & KE1 generation & 118.83~$\mu$s & [116.59; 121.76] & OPRF + ML-KEM key generation \\
-Authentication & KE2 generation & 297.03~$\mu$s & [294.81; 299.69] & 4DH + ML-KEM encapsulation \\
-Authentication & KE3 generation at the initiator & \textbf{492.34~ms} & [478.95; 509.96] & \textbf{Argon2id} + ML-KEM decapsulation \\
-Authentication & Final responder verification & 1.24~$\mu$s & [1.174; 1.323] & MAC verification \\
+Registration & Registration-request creation & 127.37~$\mu$s & [125.24; 130.09] & OPRF blinding \\
+Registration & Remote-node response creation & 71.42~$\mu$s & [70.98; 71.84] & OPRF evaluation \\
+Registration & Registration completion & \textbf{1.065~s} & [993.93~ms; 1.143~s] & \textbf{Argon2id} \\
+Authentication & KE1 generation & 304.87~$\mu$s & [288.05; 322.18] & OPRF + ML-KEM keygen \\
+Authentication & KE2 generation & 592.69~$\mu$s & [582.16; 606.72] & 4DH + ML-KEM encaps. \\
+Authentication & KE3 generation at the initiator & \textbf{1.101~s} & [1.034; 1.169]~s & \textbf{Argon2id} + decapsulation \\
+Authentication & Final responder verification & 2.61~$\mu$s & [2.31; 3.06] & MAC verification \\
 \midrule
-Full & End-to-end authentication cycle & \textbf{481.43~ms} & [471.73; 495.25] & \textbf{Argon2id} \\
+Full & End-to-end authentication cycle & \textbf{836.11~ms} & [825.41; 847.99] & \textbf{Argon2id} \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
 The values in Table~\ref{tab:protocol-bench} are not additive: isolated
-KE3 generation and the complete authentication scenario were measured in
-separate benchmark runs with different state-initialization
-configurations.
-Consequently, the mean for the full cycle may be slightly lower than
-the mean for the isolated phase, while the 95\% confidence intervals
-overlap substantially. These measurements should be interpreted in
-terms of dominant components rather than direct
-phase-by-phase summation: remote-node KE2 generation remains a
-sub-millisecond operation, whereas Argon2id contributes the
-overwhelming share of time.
+phase measurements and the complete authentication scenario are separate
+Criterion workloads with different state-initialization and batching
+boundaries. They should therefore be interpreted as scenario-specific
+runtime profiles rather than as phase-by-phase summands. Remote-node KE2
+generation remains a sub-millisecond operation, whereas Argon2id
+contributes the overwhelming share of time.
 
 \subsection{Key Quantitative Findings and Implementation Implications}
 
 The isolated responder profile shows that the remote node's cryptographic
 core remains compatible with high-throughput deployment:
-isolated KE2 generation takes 254.26~$\mu$s, whereas final responder
-verification takes only 760.82~ns. This yields a theoretical upper
-bound of approximately $3.92 \times 10^3$ authentications per second
+isolated KE2 generation takes 592.69~$\mu$s, whereas final responder
+verification takes only 2.61~$\mu$s. This yields a theoretical upper
+bound of approximately $1.69 \times 10^3$ authentications per second
 per core for a cryptography-bound remote node, excluding database access,
 telemetry, and business logic.
 
 For the complete AKE without the KSF, the post-quantum component adds
-159.3~$\mu$s ($+30.1\%$) of CPU time; against the Argon2id background,
-however, this excess shrinks to approximately $0.03\%$ of a typical
+379.45~$\mu$s ($+48.3\%$) of CPU time; against the Argon2id background,
+however, this excess shrinks to approximately $0.045\%$ of a typical
 end-to-end scenario. The principal trade-off is not CPU cost but
 network volume: the complete handshake occupies
 2715~bytes in wire format, that is, 2272~bytes more than the classical
@@ -1647,7 +1644,7 @@ and key-derivation work introduced by the hybrid path. Then
 \]
 On the benchmark platform, this corresponds to a measured increase of
 $C_{\mathrm{DH}} + C_{\mathrm{KEM}} + C_{\mathrm{misc}}
-\approx 159.3~\mu$s without the
+\approx 379.45~\mu$s without the
 KSF. Compared with the established baseline of classical OPAQUE, the
 cost for honest parties rises additively, and the interaction profile is
 unchanged. Within the present threat model, explicit compromise of the
@@ -1837,7 +1834,7 @@ The evidence is deliberately mixed. ProVerif confirms secrecy and
 authentication in separate models, Tamarin establishes 8/8 lemmas in the
 archived surrogate 4DH model, and the reference implementation exercises the
 wire format, state machine, tests, and benchmark paths. On the benchmark
-platform, end-to-end authentication takes 481.43~ms, Argon2id is the
+platform, end-to-end authentication takes 836.11~ms, Argon2id is the
 main latency component, and the additional cryptographic cost of the
 post-quantum layer is small in processor time but substantial in message
 expansion.
