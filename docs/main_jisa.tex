@@ -1203,59 +1203,60 @@ Figure~\ref{fig:hybrid-condition-surface} visualizes this interpretation.
 
 \begin{figure}[htbp]
 \centering
-\resizebox{0.82\textwidth}{!}{%
+\resizebox{0.88\textwidth}{!}{%
 \begin{tikzpicture}[
-  x={(5.2cm,0cm)},
-  y={(2.45cm,1.05cm)},
-  z={(0cm,3.1cm)},
   font=\scriptsize,
+  header/.style={font=\scriptsize\bfseries,align=center},
+  note/.style={draw=gray!55,rounded corners=2pt,fill=gray!6,
+    align=center,inner sep=3pt,font=\scriptsize},
   >=Stealth
 ]
-  \coordinate (O) at (0,0,0);
-  \coordinate (X) at (1,0,0);
-  \coordinate (Y) at (0,1,0);
-  \coordinate (Z) at (0,0,1);
-  \coordinate (XY) at (1,1,0);
-  \coordinate (XZ) at (1,0,1);
-  \coordinate (YZ) at (0,1,1);
-  \coordinate (XYZ) at (1,1,1);
+  \coordinate (A) at (1.6,0.1);
+  \coordinate (B) at (7.6,2.5);
 
-  \fill[eclgreen!12,opacity=0.92] (O) -- (X) -- (XY) -- (Y) -- cycle;
-  \fill[eclred!18,opacity=0.88] (0.72,0.72,0) -- (XY) -- (1,1,0.34)
-    -- (0.72,0.72,0.34) -- cycle;
-  \fill[eclred!10,opacity=0.72] (Z) -- (XZ) -- (XYZ) -- (YZ) -- cycle;
+  \fill[eclgreen!10] (1.6,1.3) rectangle (4.6,2.5);
+  \fill[eclgreen!10] (4.6,1.3) rectangle (7.6,2.5);
+  \fill[eclgreen!10] (1.6,0.1) rectangle (4.6,1.3);
+  \fill[eclred!12] (4.6,0.1) rectangle (7.6,1.3);
 
-  \draw[gray!65] (O) -- (X) -- (XY) -- (Y) -- cycle;
-  \draw[gray!45] (Z) -- (XZ) -- (XYZ) -- (YZ) -- cycle;
-  \draw[gray!45] (O) -- (Z);
-  \draw[gray!45] (X) -- (XZ);
-  \draw[gray!45] (Y) -- (YZ);
-  \draw[gray!45] (XY) -- (XYZ);
+  \draw[gray!65] (A) rectangle (B);
+  \draw[gray!65] (4.6,0.1) -- (4.6,2.5);
+  \draw[gray!65] (1.6,1.3) -- (7.6,1.3);
 
-  \draw[->,thick,eclblue!80!black] (O) -- (1.22,0,0)
-    node[anchor=west] {classical source};
-  \draw[->,thick,eclgold!90!black] (O) -- (0,1.22,0)
-    node[anchor=west] {ML-KEM source};
-  \draw[->,thick,eclred!80!black] (O) -- (0,0,1.22)
-    node[anchor=south] {extractor term};
+  \node[header,text=eclblue!75!black] at (4.6,3.35)
+    {classical source $\mathrm{IKM}_{\mathrm{cl}}$};
+  \draw[->,thick,eclblue!75!black] (1.6,3.05) -- (7.6,3.05);
 
-  \node[align=center,text=eclgreen!45!black,fill=white,fill opacity=0.78,
-    text opacity=1,inner sep=1.5pt] at (0.38,0.24,0.14)
-    {at least one source\\remains pseudorandom};
-  \node[align=center,text=eclred!65!black,font=\small\bfseries]
-    at (0.88,0.90,0.35) {both sources\\weakened};
-  \node[align=center,text=eclred!70!black,font=\small]
-    at (0.56,0.48,1.06)
-    {$\mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}}$};
-  \node[anchor=north,text=eclblue!80!black] at (0.82,-0.05,0)
-    {$\mathrm{IKM}_{\mathrm{cl}}$};
+  \node[header,rotate=90,text=eclgold!70!black] at (-0.20,1.30)
+    {ML-KEM source $\mathrm{IKM}_{\mathrm{pq}}$};
+  \draw[->,thick,eclgold!80!black] (0.75,0.10) -- (0.75,2.50);
+
+  \node[header] at (3.10,2.78) {hidden};
+  \node[header] at (6.10,2.78) {recoverable};
+  \node[header,anchor=east] at (1.35,1.90) {hidden};
+  \node[header,anchor=east] at (1.35,0.70) {recoverable};
+
+  \node[align=center,text=eclgreen!35!black,text width=2.65cm] at (3.10,1.90)
+    {both sources hidden\\$\mathrm{PRK}$ pseudorandom};
+  \node[align=center,text=eclgreen!35!black,text width=2.65cm] at (6.10,1.90)
+    {ML-KEM hidden\\$\mathrm{PRK}$ pseudorandom};
+  \node[align=center,text=eclgreen!35!black,text width=2.65cm] at (3.10,0.70)
+    {classical hidden\\$\mathrm{PRK}$ pseudorandom};
+  \node[align=center,text=eclred!65!black,text width=2.65cm] at (6.10,0.70)
+    {both recoverable\\outside the bound};
+
+  \node[note,text=eclred!70!black,text width=6.6cm] at (4.60,-0.48)
+    {Extractor loss in all cases:
+    $\mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}}$.};
 \end{tikzpicture}
 }
-\caption{Geometric reading of the hybrid-combiner condition used in
-Eq.~\eqref{eq:hybrid-advantage-bound}. The diagram restates the adopted
-interpretation: final-key recovery is modeled as requiring simultaneous
-weakening of the classical and post-quantum sources, up to the extractor
-term.}
+\caption{Condition map for the hybrid-combiner interpretation used in
+Eq.~\eqref{eq:hybrid-advantage-bound}. Rows and columns describe whether
+the classical or ML-KEM source remains hidden relative to a fixed
+transcript. Under the extractor interpretation, the PRK remains
+pseudorandom whenever at least one source remains hidden; simultaneous
+recovery of both sources is the source-level condition not ruled out by
+the bound, up to the additive extractor term.}
 \label{fig:hybrid-condition-surface}
 \end{figure}
 
@@ -1357,8 +1358,13 @@ implementation-level checks to show which claims are supported at which
 layer. ProVerif is most useful for message logic and correspondence
 properties in a simplified unbounded-session setting, Tamarin for
 stateful properties such as forward secrecy and the combiner
-interpretation, and Rust tests for implementation-specific failure modes
-not represented in the symbolic model.
+interpretation, and the executable Rust test suite for concrete
+state-machine behavior that symbolic tools intentionally abstract away:
+wire-format parsing, version and length rejection, transcript-field
+mutation, replay rejection, failure-state consumption, zeroization
+boundaries, and external-adapter error contracts. These tests do not
+replace symbolic analysis; they bind the formalized protocol structure
+to the implementation behavior that would be exercised by callers.
 
 \subsubsection{ProVerif 2.05}
 
