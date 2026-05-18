@@ -58,7 +58,8 @@ Message:
 ## Slide 6 — Runtime Cost of Going Post-Quantum
 
 Primary visual:
-- Figure `fig:pq-overhead-phases`
+- planned Figure F8 from `docs/FIGURE_PLAN.md` after the Linux/Xeon
+  benchmark refresh
 
 Message:
 - ML-KEM-768 adds overhead, but not a new latency class

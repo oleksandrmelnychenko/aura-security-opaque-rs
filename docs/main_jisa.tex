@@ -4,7 +4,7 @@
 %  Compiler: pdfLaTeX
 % ============================================================
 \documentclass[preprint,12pt]{elsarticle}
-\biboptions{numbers,sort&compress}
+\biboptions{numbers}
 
 % ── Language & Encoding (pdfLaTeX) ───────────────────────────
 \usepackage[T1]{fontenc}
@@ -103,9 +103,9 @@
 % ============================================================
 Password authentication remains embedded in contemporary information systems, including systems that already use modern transport security. Password-authenticated key exchange, including OPAQUE, still relies on classical hardness assumptions tied to Diffie--Hellman problems and elliptic-curve cryptography. In settings where authentication transcripts may remain sensitive for years, scalable quantum attacks and the store-now-decrypt-later threat make hybrid post-quantum designs a practical migration question.
 
-This paper specifies Hybrid PQ-OPAQUE, an OPAQUE-based construction in which ML-KEM-768 (FIPS~203) is incorporated into the authenticated 4DH exchange path without adding a protocol message. The session key is derived by HKDF-Extract from four Ristretto255 Diffie--Hellman values and the ML-KEM-768 shared secret under a transcript-dependent salt. The specification fixes the wire format, account-context binding through $\acct$, deterministic derivation of the OPRF key from the root secret $\sigoprf$, and transcript-level incorporation of the post-quantum components.
+This paper specifies Hybrid PQ-OPAQUE, an OPAQUE-based construction in which ML-KEM-768 (FIPS~203) is incorporated into the authenticated 4DH exchange path without adding a protocol message. The session key is derived by HKDF-Extract from four Ristretto255 Diffie--Hellman values and the ML-KEM-768 shared secret under a transcript-dependent salt. The specification fixes the wire format, account-context binding through the account identifier $\acct$, deterministic derivation of the OPRF key from the root secret $\sigoprf$, and transcript-level incorporation of the post-quantum components.
 
-The analysis combines ProVerif~2.05, a surrogate 4DH model in Tamarin~Prover~1.10.0, and a Rust implementation validated by deterministic, integration, and property-oriented tests. The formal results are interpreted within explicit boundaries: they do not constitute a machine-checked proof of the implementation, and the offline-resistance claim is limited to compromise of the server database without compromise of $\sigoprf$.
+The analysis combines ProVerif~2.05, a surrogate 4DH model in Tamarin~Prover~1.10.0, and a reference implementation in Rust validated by deterministic, integration, and property-oriented tests. The formal results are interpreted within explicit boundaries: they do not constitute a machine-checked proof of the implementation, and the offline-resistance claim is limited to compromise of the server database without compromise of $\sigoprf$.
 
 On Apple~M1~Pro, end-to-end authentication takes 481.43~ms, a full ML-KEM-768 round costs 122.01~$\mu$s, and Argon2id is the main latency component. The post-quantum layer adds 159.3~$\mu$s to the key-exchange path without the KSF and increases the handshake size to 2715~bytes while preserving the three-message interaction profile. Relative to classical OPAQUE, the construction adds limited computation for honest parties while moving most overhead to message expansion.
 \end{abstract}
@@ -124,13 +124,13 @@ OPAQUE \sep PAKE \sep ML-KEM-768 \sep post-quantum cryptography \sep hybrid key 
 
 Password authentication remains widely deployed in contemporary distributed systems. Survey evidence indicates that more than 80\% of authentication procedures in web applications and network services still rely on passwords~\cite{bonneau2012,florencio2007}. Password-authenticated key-exchange protocols (PAKEs) allow two parties sharing a low-entropy secret to establish a protected channel without revealing that secret to an adversary~\cite{bellare2000}. Among augmented PAKE constructions, OPAQUE~\cite{jarecki2018} is a well studied scheme: under compromise of the authentication database alone, the server stores a cryptographic record rather than a password equivalent~\cite{ietf-opaque}. In deployed systems, this property depends on a clear trust boundary, because compromise of the global secret from which OPRF keys are derived is distinct from compromise of a passive record store.
 
-This reliance on classical hardness assumptions is a concern in the presence of quantum adversaries. Shor's algorithm~\cite{shor1994} applies to cryptosystems based on the discrete logarithm problem, including elliptic-curve key exchange and PAKE constructions built on related assumptions~\cite{bernstein2017}. Earlier estimates suggested that breaking Ristretto255/Curve25519 would require a cryptographically relevant quantum computer with approximately 2{,}330 logical qubits~\cite{roetteler2017}. More recent estimates for 256-bit elliptic-curve cryptography over \codeid{secp256k1} report realizations of Shor's algorithm for ECDLP-256 requiring no more than 1200 logical qubits and 90 million Toffoli operations, or no more than 1450 logical qubits and 70 million Toffoli operations, respectively~\cite{babbush2026}. Although these figures are not direct estimates for Ristretto255, they support the broader view that migration planning for 256-bit elliptic-curve systems should not wait for practical attacks. The store-now-decrypt-later strategy~\cite{mosca2018}, in which an adversary archives encrypted traffic for future decryption, adds to that motivation for systems protecting long-lived confidential data.
+This reliance on classical hardness assumptions is a concern in the presence of quantum adversaries. Shor's algorithm~\cite{shor1994} applies to cryptosystems based on the discrete logarithm problem, including elliptic-curve key exchange and PAKE constructions built on related assumptions~\cite{bernstein2017}. Earlier estimates suggested that breaking Ristretto255/Curve25519 would require a cryptographically relevant quantum computer with approximately 2{,}330 logical qubits~\cite{roetteler2017}. More recent work reports two resource profiles for Shor's algorithm against 256-bit ECDLP over the \codeid{secp256k1} curve: no more than 1200 logical qubits with 90 million Toffoli operations, or no more than 1450 logical qubits with 70 million Toffoli operations~\cite{babbush2026}. These figures are not parameter-specific estimates for Ristretto255. They are used here only as a contemporary calibration point for 256-bit elliptic-curve migration risk. The store-now-decrypt-later strategy~\cite{mosca2018}, in which an adversary archives encrypted traffic for future decryption, adds to that motivation for systems protecting long-lived confidential data.
 
 In August 2024, NIST published the first post-quantum cryptography standards, including FIPS~203 for ML-KEM~\cite{fips203} and FIPS~204 for ML-DSA~\cite{fips204}. Hybrid constructions that combine classical and post-quantum components are being introduced in TLS~1.3~\cite{stebila2024}, Signal (PQXDH)~\cite{brendel2020}, and WireGuard~\cite{hulsing2021}. Password authentication has not reached the same level of standardization. Classical OPAQUE in its current IETF specification~\cite{ietf-opaque} contains no mechanism aimed at quantum attacks, and other established PAKE protocols such as SRP and SPAKE2 have the same limitation. Recent work on post-quantum and hybrid PAKE has produced compact KEM-based constructions~\cite{arriaga2024}, UC/QROM-secure schemes~\cite{lyu2024uc}, and formal studies of hybrid composition~\cite{hesse2024,lyu2024hybrid}. What remains less developed is the combination of an augmented-PAKE design with explicit message syntax, scoped formal claims, measurements, and implementation-level evidence.
 
 \subsection{Research Scope and Contributions}
 
-This paper studies a narrower engineering question: whether OPAQUE can be reinforced with ML-KEM-768 while preserving its three-message authentication flow. The construction combines four Ristretto255 Diffie--Hellman values with an ML-KEM-768 shared secret, binds an explicit account context $\acct$ and wire-format versioning into the transcript, and evaluates the result using symbolic analysis and an executable Rust implementation. The contribution is not a general theory of hybrid PAKE composition; it is an implementation-level augmented-PAKE design with explicit syntax, stated assumptions, and a deliberately limited claim set.
+This paper studies a narrower engineering question: whether OPAQUE can be reinforced with ML-KEM-768 while preserving its three-message authentication flow. The construction combines four Ristretto255 Diffie--Hellman values with an ML-KEM-768 shared secret, binds an explicit account context represented by the account identifier $\acct$ and wire-format versioning into the transcript, and evaluates the result using symbolic analysis and an executable reference implementation in Rust. The contribution is not a general theory of hybrid PAKE composition; it is an implementation-level augmented-PAKE design with explicit syntax, stated assumptions, and a deliberately limited claim set.
 
 The analysis is organized around four questions: whether ML-KEM-768 can be incorporated without increasing the number of protocol messages; how the classical and post-quantum key materials should be combined to preserve transcript binding; what evidence can support implementation-level claims without overstating them; and whether the added post-quantum cost matters when Argon2id dominates end-to-end latency. These questions are addressed by keeping the protocol description, symbolic models, tests, and benchmarks aligned to one implementation-oriented specification. Relative to classical OPAQUE, the resulting design preserves the interaction profile, adds moderate computational overhead outside the password-hardening step, and moves most of the new cost to message expansion in KE1 and KE2.
 
@@ -163,6 +163,12 @@ The analysis is organized around four questions: whether ML-KEM-768 can be incor
         end-to-end latency.
 \end{enumerate}
 
+% FIGURE SLOT F1 (optional overview, see docs/FIGURE_PLAN.md):
+% Place a one-page visual overview here only if the final version needs a
+% high-level reader map before the technical sections. The figure should show
+% the protocol specification, symbolic models, reference implementation, tests,
+% and benchmarks as separate evidence layers, not as one undifferentiated proof.
+
 \subsection{Terminological Conventions}
 
 To avoid terminological drift, the remainder of the paper adheres to
@@ -179,6 +185,7 @@ Term & Fixed meaning \\
 \midrule
 Wire format & The complete byte-level representation of a message on the channel, including the version prefix and protocol service fields \\
 Payload & The message body excluding the version prefix and any external wrappers \\
+Account identifier ($\acct$) & A stable byte string identifying the user's account; in this construction it is cryptographic context, not only a database lookup key \\
 Augmented PAKE (aPAKE) & A class of password-authenticated key-exchange protocols in which the server stores a verifier rather than the password itself or its direct equivalent \\
 Key-derivation scheme & The sequence of extraction and expansion procedures that produces session and auxiliary keys \\
 Research artifact & Source code, formal models, tests, and benchmarks needed for independent reproduction of the reported results \\
@@ -464,6 +471,12 @@ absence of side channels or memory-safety bugs in external crates. \\
 \end{tabularx}
 \end{table}
 
+% FIGURE SLOT F2 (optional but useful, see docs/FIGURE_PLAN.md):
+% A compact threat-boundary diagram can be placed here if the final article
+% needs a visual distinction between database compromise, OPRF-root compromise,
+% active network control, post-session long-term key exposure, and quantum DH
+% recovery. The diagram must not introduce claims beyond Table~\ref{tab:threat-boundary}.
+
 \textbf{Protocol requirements:}
 \begin{description}
   \item[R1] (OPAQUE-derived goals): password secrecy, forward secrecy,
@@ -476,8 +489,8 @@ absence of side channels or memory-safety bugs in external crates. \\
         reduced to weakening only one layer;
   \item[R4] (Interaction preservation): preservation of three protocol
         messages and 1.5 network round trips;
-  \item[R5] (Implementability): a reproducible Rust
-        implementation suitable for further analysis and engineering.
+  \item[R5] (Implementability): a reproducible reference implementation
+        in Rust suitable for further analysis and engineering.
 \end{description}
 
 \subsection{Formal Definitions}
@@ -538,6 +551,11 @@ decrypt later'' threat model. The protocol consists of two phases:
 \emph{authentication} (the three-message KE1--KE2--KE3 exchange).
 Throughout the sequel, the terms \emph{wire format} and \emph{payload}
 are used in the senses fixed in Table~\ref{tab:terminology}.
+
+% FIGURE SLOT F3 (recommended, see docs/FIGURE_PLAN.md):
+% Add a protocol-flow diagram for registration and KE1--KE2--KE3 before the
+% tables if space permits. It should show only stable protocol fields and the
+% transcript-binding points; avoid implementation-specific crate names here.
 
 \begin{table}[htbp]
 \caption{Cryptographic primitives used in Hybrid PQ-OPAQUE}
@@ -617,6 +635,10 @@ remains essentially unchanged.}
 \label{fig:wire-size-growth}
 \end{figure}
 
+% FIGURE SLOT F4 (already implemented): Figure~\ref{fig:wire-size-growth}
+% is the current wire-size-growth figure. Keep it unless a cleaner external
+% vector graphic replaces the TikZ version.
+
 Figure~\ref{fig:wire-size-growth} shows that the post-quantum layer
 leaves finalization almost unchanged while increasing the transport
 budget of the first two messages, namely the phases that carry
@@ -675,7 +697,8 @@ KSF input and salt:
   H\!\bigl(\Label{salt} \|
   y_{\mathrm{oprf}}\bigr)[0..15].
 \end{equation}
-The randomized password is then computed as
+The randomized password is then computed with Argon2id~\cite{biryukov2016}
+as
 \begin{equation}
   \mathrm{rwd} = \mathrm{Argon2id}\!\bigl(
     x_{\mathrm{ksf}},\; \mathrm{salt}_{\mathrm{ksf}};\;
@@ -695,8 +718,8 @@ abstract descriptions of OPAQUE. Every wire-format message carries a
 one-byte version prefix $v = \mathtt{0x01}$, which separates the
 payload from the full transmission format and enables rejection of
 unsupported versions. The protocol also uses an explicit account
-identifier $\acct$, treated not merely as a database lookup key but as
-cryptographic context.
+identifier $\acct$, a stable byte string naming the account, treated not
+merely as a database lookup key but as cryptographic context.
 
 Let
 \begin{equation}
@@ -787,6 +810,11 @@ $v \,\|\, \mathrm{KE1}$ occupies 1273~bytes.
     \mathrm{combined\_ikm})
   \label{eq:hybrid-prk}
 \end{align}
+
+% FIGURE SLOT F5 (recommended, see docs/FIGURE_PLAN.md):
+% Add a hybrid-combiner/key-schedule block diagram after Eq.~\eqref{eq:hybrid-prk}.
+% The figure should show 4DH outputs and the ML-KEM shared secret entering
+% HKDF-Extract under transcript salt, then expanding to K_s, K_m, and MAC keys.
 
 \textbf{Key derivation.} Let
 $\KLabel{s}$, $\KLabel{m}$, $\KLabel{macS}$, and $\KLabel{macC}$
@@ -1067,7 +1095,7 @@ symbolic models do not analyze microarchitectural leakage.
 The protocol was analyzed with two symbolic tools in the Dolev--Yao
 model: ProVerif~2.05 and Tamarin~Prover~1.10.0. The purpose of this
 analysis is to check the structure of the protocol argument, not to
-certify the Rust implementation line by line. ProVerif is used in
+certify the reference implementation line by line. ProVerif is used in
 separate secrecy and authentication models, whereas Tamarin is applied
 to a verified surrogate 4DH model. The results are therefore read
 together with the modeling boundaries and with the executable artifact
@@ -1099,6 +1127,11 @@ P7 & Resistance to offline guessing & --- & \textbf{supported for the database m
 \end{tabular}
 }
 \end{table}
+
+% FIGURE SLOT F6 (optional evidence map, see docs/FIGURE_PLAN.md):
+% Add a small evidence-map figure here only if the verification section feels
+% too table-heavy. It should map P1--P7 to ProVerif, Tamarin, and Rust tests,
+% while preserving the limits stated in the text.
 
 Table~\ref{tab:verification-summary} combines symbolic and
 implementation-level checks to show which claims are supported at which
@@ -1212,7 +1245,7 @@ recorded.
 \section{Implementation and Experimental Evaluation}
 % ============================================================
 
-\subsection{Architecture of the Rust Implementation}
+\subsection{Architecture of the Reference Implementation}
 
 The protocol is implemented in \textbf{Rust~1.93.1} as a multi-crate
 workspace. Rust was selected for compile-time memory safety, the
@@ -1239,6 +1272,11 @@ Formal models & & 1806 & Tamarin, ProVerif \\
 \bottomrule
 \end{tabular*}
 \end{table}
+
+% FIGURE SLOT F7 (optional implementation architecture, see docs/FIGURE_PLAN.md):
+% Add a component diagram here if space permits: opaque-core, opaque-agent,
+% opaque-relay, opaque-ffi, tests, benchmarks, and formal models. Keep it as a
+% reference-implementation map rather than a deployment architecture.
 
 \subsection{Specification-to-Implementation Traceability}
 
@@ -1355,6 +1393,11 @@ benchmark suite, and the formal models gives an independent check on the
 main quantitative and structural claims reported here.
 
 \subsection{Benchmarks of Cryptographic Primitives}
+
+% FIGURE SLOT F8 (recommended after server benchmark refresh, see docs/FIGURE_PLAN.md):
+% Add a runtime profile figure once the benchmark tables are regenerated on the
+% Linux/Xeon server. It should compare Argon2id, ML-KEM full round, 4DH, KE2,
+% KE3, and end-to-end authentication on the same platform.
 
 \begin{table}[htbp]
 \caption{Benchmark results for cryptographic primitives}
@@ -1613,7 +1656,7 @@ This linkage also keeps the interpretation of the evidence disciplined.
 The AND-style argument belongs to the Tamarin abstraction and the
 combiner rationale. Parsing correctness, rejection of non-canonical
 points, version handling, and prevention of state reuse are properties
-of the Rust implementation and its tests. For post-quantum migration
+of the reference implementation and its tests. For post-quantum migration
 work, that separation is useful: it makes the strengths of the artifact
 visible without hiding the parts that still require stronger analysis.
 
@@ -1658,7 +1701,7 @@ classical and post-quantum contributions.
 
 The evidence is deliberately mixed. ProVerif confirms secrecy and
 authentication in separate models, Tamarin establishes 8/8 lemmas in the
-archived surrogate 4DH model, and the Rust implementation exercises the
+archived surrogate 4DH model, and the reference implementation exercises the
 wire format, state machine, tests, and benchmark paths. On the benchmark
 platform, end-to-end authentication takes 481.43~ms, Argon2id is the
 main latency component, and the additional cryptographic cost of the
@@ -1718,29 +1761,6 @@ were independently reviewed, verified, and approved by the author.
 \begin{thebibliography}{99}
 % ============================================================
 
-\bibitem{svystun2025dytam}
-Svystun~S., Scis{\l}o~L., Pawlik~M., Melnychenko~O., Radiuk~P., Savenko~O., Sachenko~A.
-DyTAM: accelerating wind turbine inspections with dynamic UAV trajectory adaptation.
-Energies 18(7) (2025) 1823.
-DOI:~\url{https://doi.org/10.3390/en18071823}.
-
-\bibitem{svystun2024thermal}
-Svystun~S., Melnychenko~O., Radiuk~P., Savenko~O., Sachenko~A., Lysyi~A.
-Thermal and RGB images work better together in wind turbine damage detection.
-International Journal of Computing 23(4) (2024) 526--535.
-DOI:~\url{https://doi.org/10.47839/ijc.23.4.3752}.
-
-\bibitem{lysyi2025fire}
-Lysyi~A., Sachenko~A., Radiuk~P., Lysyi~M., Melnychenko~O., Ishchuk~O., Savenko~O.
-Enhanced fire hazard detection in solar power plants: an integrated UAV, AI, and SCADA-based approach.
-Radioelectronic and Computer Systems (2) (2025) 99--117.
-DOI:~\url{https://doi.org/10.32620/reks.2025.2.06}.
-
-\bibitem{jarecki2018}
-Jarecki~S., Krawczyk~H., Xu~J.
-OPAQUE: an asymmetric PAKE protocol secure against pre-computation attacks.
-In: EUROCRYPT 2018, LNCS~10822, Springer, 2018, pp.~456--486.
-
 \bibitem{bonneau2012}
 Bonneau~J., Herley~C., van~Oorschot~P.\,C., Stajano~F.
 The quest to replace passwords: a framework for comparative evaluation of web authentication schemes.
@@ -1755,6 +1775,11 @@ In: Proceedings of the International Conference on World Wide Web, 2007, pp.~657
 Bellare~M., Pointcheval~D., Rogaway~P.
 Authenticated key exchange secure against dictionary attacks.
 In: EUROCRYPT 2000, LNCS~1807, Springer, 2000, pp.~139--155.
+
+\bibitem{jarecki2018}
+Jarecki~S., Krawczyk~H., Xu~J.
+OPAQUE: an asymmetric PAKE protocol secure against pre-computation attacks.
+In: EUROCRYPT 2018, LNCS~10822, Springer, 2018, pp.~456--486.
 
 \bibitem{ietf-opaque}
 Bourdrez~D., Krawczyk~H., Lewi~K., Wood~C.\,A.
@@ -1818,6 +1843,29 @@ H\"{u}lsing~A., Ning~K.-C., Schwabe~P., Weber~F., Zimmermann~P.\,R.
 Post-quantum WireGuard.
 In: Proceedings of the IEEE Symposium on Security and Privacy, 2021, pp.~304--321.
 
+\bibitem{arriaga2024}
+Arriaga~A., Barbosa~M., Jarecki~S., Skrobot~M.
+C'est tr\`es CHIC: a compact password-authenticated key exchange from lattice-based KEM.
+Cryptology ePrint Archive, Paper~2024/308, 2024.
+URL:~\url{https://eprint.iacr.org/2024/308}.
+
+\bibitem{lyu2024uc}
+Lyu~Y., Liu~S., Han~S.
+Universal composable password authenticated key exchange for the post-quantum world.
+In: EUROCRYPT 2024, LNCS~14657, Springer, 2024, pp.~120--150.
+
+\bibitem{hesse2024}
+Hesse~J., Rosenberg~M.
+PAKE combiners and efficient post-quantum instantiations.
+Cryptology ePrint Archive, Paper~2024/1621, 2024.
+URL:~\url{https://eprint.iacr.org/2024/1621}.
+
+\bibitem{lyu2024hybrid}
+Lyu~Y., Liu~S.
+Hybrid password authentication key exchange in the UC framework.
+Cryptology ePrint Archive, Paper~2024/1630, 2024.
+URL:~\url{https://eprint.iacr.org/2024/1630}.
+
 \bibitem{boyko2000}
 Boyko~V., MacKenzie~P., Patel~S.
 Provably secure password-authenticated key exchange using Diffie--Hellman.
@@ -1844,6 +1892,11 @@ Wu~T.
 The Secure Remote Password protocol.
 In: Proceedings of NDSS, 1998, pp.~97--111.
 
+\bibitem{canetti2001}
+Canetti~R.
+Universally composable security: a new paradigm for cryptographic protocols.
+In: Proceedings of the IEEE Symposium on Foundations of Computer Science, 2001, pp.~136--145.
+
 \bibitem{devalence2024}
 de~Valence~H., Grigg~J., Hamburg~M., Lovecruft~I., Tankersley~G.,
 Valsorda~F.
@@ -1851,10 +1904,27 @@ The ristretto255 and decaf448 groups.
 IRTF RFC~9496, December~2023.
 URL:~\url{https://www.rfc-editor.org/info/rfc9496}.
 
-\bibitem{canetti2001}
-Canetti~R.
-Universally composable security: a new paradigm for cryptographic protocols.
-In: Proceedings of the IEEE Symposium on Foundations of Computer Science, 2001, pp.~136--145.
+\bibitem{beguinet2023}
+Esgin~M.\,F., Steinfeld~R., Tairi~E., Xu~J.
+LeOPaRd: towards practical post-quantum oblivious PRFs via interactive lattice problems.
+Cryptology ePrint Archive, Paper~2024/1615, 2024.
+URL:~\url{https://eprint.iacr.org/2024/1615}.
+
+\bibitem{castryck2023}
+Castryck~W., Decru~T.
+An efficient key recovery attack on SIDH.
+In: EUROCRYPT 2023, LNCS~14008, Springer, 2023, pp.~423--447.
+
+\bibitem{vos2025}
+Vos~J., Jarecki~S., Wood~C.\,A.
+Hybrid Post-Quantum Password Authenticated Key Exchange.
+Individual Internet-Draft draft-vos-cfrg-pqpake-00, April~2025.
+URL:~\url{https://datatracker.ietf.org/doc/draft-vos-cfrg-pqpake/00/}.
+
+\bibitem{biryukov2016}
+Biryukov~A., Dinu~D., Khovratovich~D.
+Argon2: new generation of memory-hard functions for password hashing.
+In: Proceedings of IEEE European Symposium on Security and Privacy, 2016, pp.~292--302.
 
 \bibitem{krawczyk2010}
 Krawczyk~H., Eronen~P.
@@ -1871,56 +1941,29 @@ Basin~D., Cremers~C., Meadows~C.
 Model checking security protocols.
 In: Handbook of Model Checking. Springer, 2018, pp.~727--762.
 
-\bibitem{biryukov2016}
-Biryukov~A., Dinu~D., Khovratovich~D.
-Argon2: new generation of memory-hard functions for password hashing.
-In: Proceedings of IEEE European Symposium on Security and Privacy, 2016, pp.~292--302.
-
 \bibitem{heyer2023}
 Heisler~B.
 Criterion.rs: statistics-driven micro-benchmarking in Rust.
 Project site.
 URL:~\url{https://github.com/bheisler/criterion.rs}.
 
-\bibitem{beguinet2023}
-Esgin~M.\,F., Steinfeld~R., Tairi~E., Xu~J.
-LeOPaRd: towards practical post-quantum oblivious PRFs via interactive lattice problems.
-Cryptology ePrint Archive, Paper~2024/1615, 2024.
-URL:~\url{https://eprint.iacr.org/2024/1615}.
+\bibitem{svystun2025dytam}
+Svystun~S., Scis{\l}o~L., Pawlik~M., Melnychenko~O., Radiuk~P., Savenko~O., Sachenko~A.
+DyTAM: accelerating wind turbine inspections with dynamic UAV trajectory adaptation.
+Energies 18(7) (2025) 1823.
+DOI:~\url{https://doi.org/10.3390/en18071823}.
 
-\bibitem{arriaga2024}
-Arriaga~A., Barbosa~M., Jarecki~S., Skrobot~M.
-C'est tr\`es CHIC: a compact password-authenticated key exchange from lattice-based KEM.
-Cryptology ePrint Archive, Paper~2024/308, 2024.
-URL:~\url{https://eprint.iacr.org/2024/308}.
+\bibitem{svystun2024thermal}
+Svystun~S., Melnychenko~O., Radiuk~P., Savenko~O., Sachenko~A., Lysyi~A.
+Thermal and RGB images work better together in wind turbine damage detection.
+International Journal of Computing 23(4) (2024) 526--535.
+DOI:~\url{https://doi.org/10.47839/ijc.23.4.3752}.
 
-\bibitem{hesse2024}
-Hesse~J., Rosenberg~M.
-PAKE combiners and efficient post-quantum instantiations.
-Cryptology ePrint Archive, Paper~2024/1621, 2024.
-URL:~\url{https://eprint.iacr.org/2024/1621}.
-
-\bibitem{lyu2024uc}
-Lyu~Y., Liu~S., Han~S.
-Universal composable password authenticated key exchange for the post-quantum world.
-In: EUROCRYPT 2024, LNCS~14657, Springer, 2024, pp.~120--150.
-
-\bibitem{lyu2024hybrid}
-Lyu~Y., Liu~S.
-Hybrid password authentication key exchange in the UC framework.
-Cryptology ePrint Archive, Paper~2024/1630, 2024.
-URL:~\url{https://eprint.iacr.org/2024/1630}.
-
-\bibitem{vos2025}
-Vos~J., Jarecki~S., Wood~C.\,A.
-Hybrid Post-Quantum Password Authenticated Key Exchange.
-Individual Internet-Draft draft-vos-cfrg-pqpake-00, April~2025.
-URL:~\url{https://datatracker.ietf.org/doc/draft-vos-cfrg-pqpake/00/}.
-
-\bibitem{castryck2023}
-Castryck~W., Decru~T.
-An efficient key recovery attack on SIDH.
-In: EUROCRYPT 2023, LNCS~14008, Springer, 2023, pp.~423--447.
+\bibitem{lysyi2025fire}
+Lysyi~A., Sachenko~A., Radiuk~P., Lysyi~M., Melnychenko~O., Ishchuk~O., Savenko~O.
+Enhanced fire hazard detection in solar power plants: an integrated UAV, AI, and SCADA-based approach.
+Radioelectronic and Computer Systems (2) (2025) 99--117.
+DOI:~\url{https://doi.org/10.32620/reks.2025.2.06}.
 
 \end{thebibliography}
 
