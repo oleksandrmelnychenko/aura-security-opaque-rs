@@ -103,7 +103,7 @@
 % ============================================================
 Password authentication remains embedded in contemporary information systems, including systems that already use modern transport security. Password-authenticated key exchange, including OPAQUE, still relies on classical hardness assumptions tied to Diffie--Hellman problems and elliptic-curve cryptography. In settings where authentication transcripts may remain sensitive for years, scalable quantum attacks and the store-now-decrypt-later threat make hybrid post-quantum designs a practical migration question.
 
-This paper specifies Hybrid PQ-OPAQUE, an OPAQUE-based construction in which ML-KEM-768 (FIPS~203) is incorporated into an authenticated key schedule with four Diffie--Hellman products without adding a protocol message. The session key is derived by HKDF-Extract from four Ristretto255 Diffie--Hellman values and the ML-KEM-768 shared secret under a transcript-dependent salt. The specification fixes the wire format, account-context binding through the account identifier $\acct$, deterministic derivation of the OPRF key from the root secret $\sigoprf$, and transcript-level incorporation of the post-quantum components.
+This paper specifies Hybrid PQ-OPAQUE, an OPAQUE-based construction in which ML-KEM-768 (FIPS~203) is incorporated into an authenticated key schedule with four Diffie--Hellman shared-secret terms without adding a protocol message. The session key is derived by HKDF-Extract from four Ristretto255 Diffie--Hellman values and the ML-KEM-768 shared secret under a transcript-dependent salt. The specification fixes the wire format, account-context binding through the account identifier $\acct$, deterministic derivation of the OPRF key from the root secret $\sigoprf$, and transcript-level incorporation of the post-quantum components.
 
 The analysis combines ProVerif~2.05, a surrogate 4DH model in Tamarin~Prover~1.10.0, and a reference implementation in Rust validated by deterministic, integration, and property-oriented tests. The formal results are interpreted within explicit boundaries: they do not constitute a machine-checked proof of the implementation, and the offline-resistance claim is limited to compromise of the server database without compromise of $\sigoprf$.
 
@@ -137,7 +137,7 @@ The analysis is organized around four questions: whether ML-KEM-768 can be incor
 \subsection{Research Contributions}
 
 \begin{enumerate}
-  \item \textbf{A concrete hybrid four-DH-products~+~ML-KEM-768 construction.} The
+  \item \textbf{A concrete hybrid 4DH~+~ML-KEM-768 construction.} The
         paper specifies a Hybrid PQ-OPAQUE variant in which
         ML-KEM-768 is part of the authenticated key exchange
         rather than an optional extension.
@@ -267,7 +267,7 @@ $dh_4 = e_S \cdot E_C$. This term binds the two ephemeral components
 within a single transcript and, at the level of 4DH intuition, is
 intended to complicate UKS-like substitutions; here it is treated as a
 design rationale rather than as an independently proved property. In this
-paper, ``4DH'' denotes these four Diffie--Hellman products in the key
+paper, ``4DH'' denotes these four Diffie--Hellman terms in the key
 schedule, not a fourth authentication message; the message flow remains
 KE1--KE2--KE3.
 Baseline OPAQUE has been proved in the Universal Composability (UC)
