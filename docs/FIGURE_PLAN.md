@@ -59,7 +59,7 @@ Recommended caption:
 
 Placement: in `Architecture and Overview`, before the primitive and message-size tables.
 
-Status: recommended.
+Status: implemented in `main_jisa.tex` as Figure `fig:protocol-flow`.
 
 Purpose: show the full construction before the equations. This should be the main reader-friendly protocol figure.
 
@@ -103,7 +103,7 @@ Current caption:
 
 Placement: after Eq. `eq:hybrid-prk`, before `Key derivation`.
 
-Status: recommended.
+Status: implemented in `main_jisa.tex` as Figure `fig:hybrid-key-schedule`.
 
 Purpose: make the scientific novelty of the combiner visible.
 

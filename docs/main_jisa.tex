@@ -555,10 +555,60 @@ decrypt later'' threat model. The protocol consists of two phases:
 Throughout the sequel, the terms \emph{wire format} and \emph{payload}
 are used in the senses fixed in Table~\ref{tab:terminology}.
 
-% FIGURE SLOT F3 (recommended, see docs/FIGURE_PLAN.md):
-% Add a protocol-flow diagram for registration and KE1--KE2--KE3 before the
-% tables if space permits. It should show only stable protocol fields and the
-% transcript-binding points; avoid implementation-specific crate names here.
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\small,
+  >=Stealth,
+  lane/.style={draw,rounded corners=2pt,fill=gray!8,minimum width=3.2cm,
+    minimum height=0.65cm,align=center},
+  phase/.style={draw,rounded corners=2pt,fill=eclgreen!10,minimum width=3.6cm,
+    minimum height=0.45cm,align=center,font=\small\bfseries},
+  note/.style={draw,rounded corners=2pt,fill=gray!5,align=center,
+    inner sep=4pt,font=\scriptsize},
+  msg/.style={-{Stealth[length=2mm]},thick},
+  bind/.style={-{Stealth[length=1.7mm]},thick,eclgreen!80!black}
+]
+  \node[lane] (client) at (0,0) {Client $\mathcal{C}$};
+  \node[lane] (server) at (11,0) {Server $\mathcal{S}$};
+  \draw[gray!35,dashed] (0,-0.45) -- (0,-8.35);
+  \draw[gray!35,dashed] (11,-0.45) -- (11,-8.35);
+
+  \node[phase] at (5.5,-0.9) {Registration};
+  \draw[msg,eclblue!85] (0,-1.55) -- node[above,font=\scriptsize]
+    {$B$} (11,-1.55);
+  \draw[msg,eclblue!85] (11,-2.25) -- node[above,font=\scriptsize]
+    {$Z \,\|\, PK_S$} (0,-2.25);
+  \node[note] (record) at (2.35,-3.05)
+    {sealed envelope\\and $PK_C$};
+  \draw[bind] (0,-2.45) -- (record.west);
+
+  \node[phase] at (5.5,-4.05) {Authentication};
+  \draw[msg,eclgold!85!black] (0,-4.75) -- node[above,font=\scriptsize]
+    {$\mathrm{KE1}: B \,\|\, E_C \,\|\, n_C \,\|\, pk_{\mathrm{kem}}$}
+    (11,-4.75);
+  \draw[msg,eclgold!85!black] (11,-5.55) -- node[above,font=\scriptsize]
+    {$\mathrm{KE2}: n_S \,\|\, E_S \,\|\, \mathrm{CredResp}
+      \,\|\, \mathrm{MAC}_S \,\|\, ct_{\mathrm{kem}}$}
+    (0,-5.55);
+  \draw[msg,eclgold!85!black] (0,-6.35) -- node[above,font=\scriptsize]
+    {$\mathrm{KE3}: \mathrm{MAC}_C$}
+    (11,-6.35);
+
+  \node[note,fill=eclgreen!8] (acctnote) at (5.5,-7.45)
+    {$\acct \rightarrow \eta,\quad
+     (pk_{\mathrm{kem}},ct_{\mathrm{kem}},\eta) \subset \tau,\quad
+     \tau \rightarrow \tau_H$};
+  \draw[bind] (acctnote.north) -- (5.5,-6.70);
+\end{tikzpicture}
+}
+\caption{Hybrid PQ-OPAQUE message flow. ML-KEM public and ciphertext
+material are carried in KE1 and KE2, while account and transcript binding
+feed the authenticated key schedule without adding an authentication
+message.}
+\label{fig:protocol-flow}
+\end{figure}
 
 \begin{table}[htbp]
 \caption{Cryptographic primitives used in Hybrid PQ-OPAQUE}
@@ -603,7 +653,7 @@ KE3 & 64 bytes & 64 bytes & 65 bytes & $0$ \\
 
 \begin{figure}[htbp]
 \centering
-\begin{tikzpicture}[x=1.85cm,y=0.0031cm,font=\small]
+\begin{tikzpicture}[x=1.95cm,y=0.0031cm,font=\small]
   \draw[->,gray!75] (0,0) -- (3.9,0) node[right] {Message};
   \draw[->,gray!75] (0,0) -- (0,1520) node[above] {Bytes};
 
@@ -615,11 +665,13 @@ KE3 & 64 bytes & 64 bytes & 65 bytes & $0$ \\
   % KE1
   \fill[eclblue!75] (0.30,0) rectangle (0.55,88);
   \fill[eclgold!85] (0.62,0) rectangle (0.87,1273);
+  \node[above,font=\scriptsize,eclgold!80!black] at (0.745,1273) {1273};
   \node[below] at (0.59,0) {KE1};
 
   % KE2
   \fill[eclblue!75] (1.45,0) rectangle (1.70,288);
   \fill[eclgold!85] (1.77,0) rectangle (2.02,1377);
+  \node[above,font=\scriptsize,eclgold!80!black] at (1.895,1377) {1377};
   \node[below] at (1.74,0) {KE2};
 
   % KE3
@@ -627,10 +679,10 @@ KE3 & 64 bytes & 64 bytes & 65 bytes & $0$ \\
   \fill[eclgold!85] (2.92,0) rectangle (3.17,65);
   \node[below] at (2.89,0) {KE3};
 
-  \draw[eclblue!75,fill=eclblue!75] (0.55,1465) rectangle (0.73,1510);
-  \node[anchor=west] at (0.80,1487) {Classical payload};
-  \draw[eclgold!85!black,fill=eclgold!85] (2.10,1465) rectangle (2.28,1510);
-  \node[anchor=west] at (2.35,1487) {Hybrid wire format};
+  \draw[eclblue!75,fill=eclblue!75] (2.05,1462) rectangle (2.22,1507);
+  \node[anchor=west,font=\scriptsize] at (2.28,1484) {Classical payload};
+  \draw[eclgold!85!black,fill=eclgold!85] (2.05,1388) rectangle (2.22,1433);
+  \node[anchor=west,font=\scriptsize] at (2.28,1410) {Hybrid wire format};
 \end{tikzpicture}
 \caption{Comparison of authentication-message sizes: the additional
 wire-format overhead is concentrated in KE1 and KE2, whereas KE3
@@ -796,7 +848,7 @@ $v \,\|\, \mathrm{KE1}$ occupies 1273~bytes.
 \textbf{Extended transcript} (including post-quantum elements):
 \begin{align}
   \tau &= E_C \| E_S \| n_C \| n_S \| PK_C \| PK_S \|
-         \mathrm{CredResp} \| pk_{\mathrm{kem}} \| ct_{\mathrm{kem}} \| \eta
+         \mathrm{CredResp} \| pk_{\mathrm{kem}} \| ct_{\mathrm{kem}} \| \eta,
          \notag\\
   \tau_H &= H\!\bigl(L_{\tau} \| \tau\bigr).
   \label{eq:hybrid-transcript}
@@ -805,31 +857,91 @@ $v \,\|\, \mathrm{KE1}$ occupies 1273~bytes.
 \textbf{Hybrid combiner:}
 \begin{align}
   \mathrm{combined\_ikm} &= dh_1 \| dh_2 \| dh_3 \| dh_4 \| ss_{\mathrm{kem}}
-  \quad(128 + 32 = 160~\text{bytes})
+  \quad(128 + 32 = 160~\text{bytes}),
   \notag\\
-  \mathrm{salt} &= \Label{comb} \| \tau_H
+  \mathrm{salt} &= \Label{comb} \| \tau_H,
   \notag\\
   \mathrm{PRK} &= \mathrm{HKDF\text{-}Extract}(\mathrm{salt},
     \mathrm{combined\_ikm}).
   \label{eq:hybrid-prk}
 \end{align}
 
-% FIGURE SLOT F5 (recommended, see docs/FIGURE_PLAN.md):
-% Add a hybrid-combiner/key-schedule block diagram after Eq.~\eqref{eq:hybrid-prk}.
-% The figure should show 4DH outputs and the ML-KEM shared secret entering
-% HKDF-Extract under transcript salt, then expanding to K_s, K_m, and MAC keys.
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\small,
+  >=Stealth,
+  block/.style={draw,rounded corners=2pt,minimum width=2.9cm,
+    minimum height=0.72cm,align=center,inner sep=4pt},
+  smallblock/.style={draw,rounded corners=2pt,minimum width=2.15cm,
+    minimum height=0.58cm,align=center,inner sep=3pt,font=\scriptsize},
+  arrow/.style={-{Stealth[length=2mm]},thick},
+  cl/.style={fill=eclblue!9,draw=eclblue!75!black},
+  pq/.style={fill=eclgold!13,draw=eclgold!85!black},
+  ctx/.style={fill=eclgreen!10,draw=eclgreen!75!black},
+  kdf/.style={fill=gray!8,draw=gray!70!black}
+]
+  \node[smallblock,cl] (dh1) at (0,0.9) {$dh_1$};
+  \node[smallblock,cl] (dh2) at (0,0.2) {$dh_2$};
+  \node[smallblock,cl] (dh3) at (0,-0.5) {$dh_3$};
+  \node[smallblock,cl] (dh4) at (0,-1.2) {$dh_4$};
+  \node[block,cl] (classical) at (3.0,-0.15)
+    {$\mathrm{IKM}_{\mathrm{cl}}$\\$dh_1\|dh_2\|dh_3\|dh_4$};
+
+  \node[block,pq] (kem) at (3.0,-2.0)
+    {$\mathrm{IKM}_{\mathrm{pq}}$\\$ss_{\mathrm{kem}}$};
+  \node[block,kdf] (combined) at (6.1,-1.05)
+    {$\mathrm{combined\_ikm}$\\$\mathrm{IKM}_{\mathrm{cl}}\|ss_{\mathrm{kem}}$};
+
+  \node[block,ctx] (acct) at (3.0,1.75)
+    {$\acct \rightarrow \eta$\\account context};
+  \node[block,ctx] (tau) at (6.1,1.75)
+    {$\tau \rightarrow \tau_H$\\extended transcript};
+  \node[block,ctx] (salt) at (9.2,1.75)
+    {$\mathrm{salt}$\\$\Label{comb}\|\tau_H$};
+
+  \node[block,kdf] (extract) at (9.2,-1.05)
+    {HKDF-Extract\\$\mathrm{PRK}$};
+  \node[block,kdf] (expand) at (12.2,-1.05)
+    {HKDF-Expand\\derived keys};
+  \node[smallblock,kdf] (ks) at (15.0,0.35) {$K_s$};
+  \node[smallblock,kdf] (km) at (15.0,-0.35) {$K_m$};
+  \node[smallblock,kdf] (macs) at (15.0,-1.05) {$K_{\mathrm{mac}}^S$};
+  \node[smallblock,kdf] (macc) at (15.0,-1.75) {$K_{\mathrm{mac}}^C$};
+
+  \foreach \x in {dh1,dh2,dh3,dh4} {
+    \draw[arrow,eclblue!75!black] (\x.east) -- (classical.west);
+  }
+  \draw[arrow,eclblue!75!black] (classical.east) -- (combined.west);
+  \draw[arrow,eclgold!85!black] (kem.east) -- (combined.west);
+  \draw[arrow,gray!75!black] (combined.east) -- (extract.west);
+  \draw[arrow,eclgreen!75!black] (acct.east) -- (tau.west);
+  \draw[arrow,eclgreen!75!black] (tau.east) -- (salt.west);
+  \draw[arrow,eclgreen!75!black] (salt.south) -- (extract.north);
+  \draw[arrow,gray!75!black] (extract.east) -- (expand.west);
+  \foreach \x in {ks,km,macs,macc} {
+    \draw[arrow,gray!75!black] (expand.east) -- (\x.west);
+  }
+\end{tikzpicture}
+}
+\caption{Transcript-bound hybrid key schedule. Classical 4DH material and
+the ML-KEM shared secret are extracted under a transcript-derived salt before
+expansion into session, master, and confirmation keys.}
+\label{fig:hybrid-key-schedule}
+\end{figure}
 
 \textbf{Key derivation.} Let
 $\KLabel{s}$, $\KLabel{m}$, $\KLabel{macS}$, and $\KLabel{macC}$
 denote fixed labels for the session key, the master key, and the two
 confirmation keys:
 \begin{align}
-  K_s &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK}, \KLabel{s}, 64)
+  K_s &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK}, \KLabel{s}, 64),
   \notag\\
-  K_m &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK}, \KLabel{m}, 32)
+  K_m &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK}, \KLabel{m}, 32),
   \notag\\
   K_{\mathrm{mac}}^S &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK},
-    \KLabel{macS}, 64)
+    \KLabel{macS}, 64),
     \notag\\
   K_{\mathrm{mac}}^C &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK},
     \KLabel{macC}, 64).
