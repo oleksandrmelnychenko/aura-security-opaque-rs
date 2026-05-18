@@ -725,19 +725,31 @@ of account identity explicit in the cryptographic specification.
 
 \subsubsection{Generation of KE1 from Client to Server}
 
-\begin{align}
-  e_C &\xleftarrow{\$} \mathbb{Z}_q^*,\qquad
-  E_C = e_C \cdot g,\qquad
-  n_C \xleftarrow{\$} \{0,1\}^{192},\\
-  (pk_{\mathrm{kem}}, sk_{\mathrm{kem}})
-    &\leftarrow \mathrm{ML\text{-}KEM\text{-}768.KeyGen}().
-\end{align}
+The client first samples the OPAQUE authentication randomness and creates
+the ephemeral ML-KEM key pair advertised in the first message:
 \begin{equation}
-  \mathrm{KE1} = B \| E_C \| n_C \| pk_{\mathrm{kem}}
-  \quad(32 + 32 + 24 + 1184 = 1272~\text{bytes of payload}).
+\label{eq:ke1-generation}
+\begin{alignedat}{2}
+  e_C &\xleftarrow{\$} \mathbb{Z}_q^*,        &\qquad
+  E_C &= e_C \cdot g,\\
+  n_C &\xleftarrow{\$} \{0,1\}^{192},         &\qquad
+  (pk_{\mathrm{kem}},sk_{\mathrm{kem}})
+      &\leftarrow \mathrm{ML\text{-}KEM\text{-}768.KeyGen}().
+\end{alignedat}
 \end{equation}
-In wire format, the message is $v \| \mathrm{KE1}$ and occupies
-1273~bytes.
+The resulting first authentication message is
+\begin{equation}
+\label{eq:ke1-wire-format}
+\begin{aligned}
+  \mathrm{KE1}
+    &= B \,\|\, E_C \,\|\, n_C \,\|\, pk_{\mathrm{kem}},\\
+  |\mathrm{KE1}|
+    &= 32 + 32 + 24 + 1184
+     = 1272~\text{bytes}.
+\end{aligned}
+\end{equation}
+With the one-byte protocol version prefix, the wire message
+$v \,\|\, \mathrm{KE1}$ occupies 1273~bytes.
 
 \subsubsection{Generation of KE2 from Server to Client}
 
@@ -874,8 +886,9 @@ the OPRF output with a random value yields
   \mathrm{Adv}_{\mathrm{OPRF}}^{\mathrm{obliv}}
   \leq \mathrm{Adv}_{\mathrm{Ristretto255}}^{\mathrm{CDH}}.
 \]
-\textbf{Game~1 $\to$ Game~2:} replace the envelope with an encryption
-of a random string (IND-CPA XSalsa20-Poly1305):
+\textbf{Envelope-hiding transition.} Next replace the envelope with an
+encryption of a random string, reducing the change in success probability
+to IND-CPA security of XSalsa20-Poly1305:
 \[
   |\Pr[S_2] - \Pr[S_1]| \leq
   \mathrm{Adv}_{\mathrm{XSalsa20}}^{\mathrm{IND\text{-}CPA}}.
