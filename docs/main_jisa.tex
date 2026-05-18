@@ -1173,6 +1173,65 @@ pseudorandom up to the additive extractor term. The interpretation is
 narrow: in this reduction sketch and in the symbolic analysis below,
 compromise of the final key is modeled as requiring simultaneous
 weakening of the classical and post-quantum layers.
+Figure~\ref{fig:hybrid-condition-surface} visualizes this interpretation.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.82\textwidth}{!}{%
+\begin{tikzpicture}[
+  x={(5.2cm,0cm)},
+  y={(2.45cm,1.05cm)},
+  z={(0cm,3.1cm)},
+  font=\scriptsize,
+  >=Stealth
+]
+  \coordinate (O) at (0,0,0);
+  \coordinate (X) at (1,0,0);
+  \coordinate (Y) at (0,1,0);
+  \coordinate (Z) at (0,0,1);
+  \coordinate (XY) at (1,1,0);
+  \coordinate (XZ) at (1,0,1);
+  \coordinate (YZ) at (0,1,1);
+  \coordinate (XYZ) at (1,1,1);
+
+  \fill[eclgreen!12,opacity=0.92] (O) -- (X) -- (XY) -- (Y) -- cycle;
+  \fill[eclred!18,opacity=0.88] (0.72,0.72,0) -- (XY) -- (1,1,0.34)
+    -- (0.72,0.72,0.34) -- cycle;
+  \fill[eclred!10,opacity=0.72] (Z) -- (XZ) -- (XYZ) -- (YZ) -- cycle;
+
+  \draw[gray!65] (O) -- (X) -- (XY) -- (Y) -- cycle;
+  \draw[gray!45] (Z) -- (XZ) -- (XYZ) -- (YZ) -- cycle;
+  \draw[gray!45] (O) -- (Z);
+  \draw[gray!45] (X) -- (XZ);
+  \draw[gray!45] (Y) -- (YZ);
+  \draw[gray!45] (XY) -- (XYZ);
+
+  \draw[->,thick,eclblue!80!black] (O) -- (1.22,0,0)
+    node[anchor=west] {classical source};
+  \draw[->,thick,eclgold!90!black] (O) -- (0,1.22,0)
+    node[anchor=west] {ML-KEM source};
+  \draw[->,thick,eclred!80!black] (O) -- (0,0,1.22)
+    node[anchor=south] {extractor term};
+
+  \node[align=center,text=eclgreen!45!black,fill=white,fill opacity=0.78,
+    text opacity=1,inner sep=1.5pt] at (0.38,0.24,0.14)
+    {at least one source\\remains pseudorandom};
+  \node[align=center,text=eclred!65!black,font=\small\bfseries]
+    at (0.88,0.90,0.35) {both sources\\weakened};
+  \node[align=center,text=eclred!70!black,font=\small]
+    at (0.56,0.48,1.06)
+    {$\mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}}$};
+  \node[anchor=north,text=eclblue!80!black] at (0.82,-0.05,0)
+    {$\mathrm{IKM}_{\mathrm{cl}}$};
+\end{tikzpicture}
+}
+\caption{Geometric reading of the hybrid-combiner condition used in
+Eq.~\eqref{eq:hybrid-advantage-bound}. The diagram restates the adopted
+interpretation: final-key recovery is modeled as requiring simultaneous
+weakening of the classical and post-quantum sources, up to the extractor
+term.}
+\label{fig:hybrid-condition-surface}
+\end{figure}
 
 \subsection{Resistance to Known Attacks}
 
@@ -1533,6 +1592,62 @@ main quantitative and structural claims reported here.
 % The benchmark tables below use the refreshed Linux/Xeon measurements.
 % A log-scale runtime profile can compare Argon2id, ML-KEM full round,
 % 4DH, KE2, KE3, and end-to-end authentication on the same platform.
+
+Figure~\ref{fig:runtime-profile} summarizes the scale separation before
+the detailed benchmark tables.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[x=1.28cm,y=0.62cm,font=\small,>=Stealth]
+  \draw[->,gray!75] (0,0) -- (6.55,0) node[right] {time};
+  \foreach \x/\lab in {
+    0/{1~$\mu$s},
+    1/{10~$\mu$s},
+    2/{100~$\mu$s},
+    3/{1~ms},
+    4/{10~ms},
+    5/{100~ms},
+    6/{1~s}
+  } {
+    \draw[gray!25] (\x,0.12) -- (\x,6.05);
+    \draw[gray!65] (\x,0.04) -- (\x,-0.04);
+    \node[below,font=\scriptsize] at (\x,-0.05) {\lab};
+  }
+
+  \node[anchor=east] at (-0.14,5.45) {4DH profile};
+  \fill[eclblue!72] (0,5.22) rectangle (2.39,5.68);
+  \node[anchor=west,font=\scriptsize] at (2.45,5.45) {245.57~$\mu$s};
+
+  \node[anchor=east] at (-0.14,4.55) {ML-KEM round};
+  \fill[eclgold!86] (0,4.32) rectangle (2.69,4.78);
+  \node[anchor=west,font=\scriptsize] at (2.75,4.55) {492.30~$\mu$s};
+
+  \node[anchor=east] at (-0.14,3.65) {KE2 generation};
+  \fill[eclgreen!70] (0,3.42) rectangle (2.77,3.88);
+  \node[anchor=west,font=\scriptsize] at (2.83,3.65) {592.69~$\mu$s};
+
+  \node[anchor=east] at (-0.14,2.75) {End-to-end auth};
+  \fill[gray!62] (0,2.52) rectangle (5.92,2.98);
+  \node[anchor=west,font=\scriptsize] at (5.98,2.75) {836.11~ms};
+
+  \node[anchor=east] at (-0.14,1.85) {Argon2id};
+  \fill[eclred!70] (0,1.62) rectangle (5.93,2.08);
+  \node[anchor=west,font=\scriptsize] at (5.99,1.85) {841.37~ms};
+
+  \node[anchor=east] at (-0.14,0.95) {KE3 generation};
+  \fill[eclred!45] (0,0.72) rectangle (6.04,1.18);
+  \node[anchor=west,font=\scriptsize] at (6.10,0.95) {1.101~s};
+
+  \node[anchor=west,font=\scriptsize,gray!70] at (0,6.32)
+    {log-scale, Criterion mean on the Linux/Xeon benchmark platform};
+\end{tikzpicture}
+}
+\caption{Runtime profile on the Linux/Xeon benchmark platform. The
+password-hardening step dominates end-to-end latency, while the
+post-quantum and classical key-exchange components remain sub-millisecond.}
+\label{fig:runtime-profile}
+\end{figure}
 
 \begin{table}[htbp]
 \caption{Benchmark results for cryptographic primitives}

@@ -160,7 +160,7 @@ Recommended caption:
 
 Placement: before or after Table `tab:micro-bench`.
 
-Status: optional; benchmark tables were refreshed on the Linux/Xeon host on 2026-05-18.
+Status: implemented in `main_jisa.tex` as Figure `fig:runtime-profile`.
 
 Purpose: make the performance result immediately legible: Argon2id dominates latency; ML-KEM and 4DH remain sub-millisecond.
 
@@ -177,16 +177,35 @@ Content:
 Recommended caption:
 `Server-side runtime profile on the Linux/Xeon benchmark platform. The password-hardening step dominates end-to-end latency, while the post-quantum and classical key-exchange components remain sub-millisecond.`
 
+## F9 — Hybrid Combiner Condition Surface
+
+Placement: after Eq. `eq:hybrid-advantage-bound`, before the known-attacks discussion.
+
+Status: implemented in `main_jisa.tex` as Figure `fig:hybrid-condition-surface`.
+
+Purpose: give a compact mathematical visual for the AND-style interpretation without presenting it as a new proof.
+
+Content:
+- horizontal axis: classical-source weakening
+- depth axis: ML-KEM-source weakening
+- vertical axis: HKDF extractor failure term
+- green base region: at least one source remains pseudorandom
+- red corner/plane: simultaneous source weakening or extractor failure
+
+Recommended caption:
+`Geometric reading of the hybrid-combiner condition used in the advantage bound. The diagram restates the adopted interpretation: final-key recovery is modeled as requiring simultaneous weakening of the classical and post-quantum sources, up to the extractor term.`
+
 ## Priority Order
 
 1. F3 Protocol Flow
 2. F5 Hybrid Combiner and Key Schedule
 3. F8 Server Benchmark Runtime Profile
-4. F4 Wire-Size Growth
-5. F6 Verification Evidence Map
-6. F2 Threat Boundary Diagram
-7. F7 Reference Implementation Architecture
-8. F1 Evidence Stack Overview
+4. F9 Hybrid Combiner Condition Surface
+5. F4 Wire-Size Growth
+6. F6 Verification Evidence Map
+7. F2 Threat Boundary Diagram
+8. F7 Reference Implementation Architecture
+9. F1 Evidence Stack Overview
 
-For a tight journal version, keep F3, F4, F5, and F8. Use F2/F6/F7 only if
-page budget allows or if reviewers ask for more visual clarification.
+For a tight journal version, keep F3, F4, F5, F8, and F9. Use F2/F6/F7
+only if page budget allows or if reviewers ask for more visual clarification.
