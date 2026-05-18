@@ -169,19 +169,20 @@ The analysis is organized around four questions: whether ML-KEM-768 can be incor
 % the protocol specification, symbolic models, reference implementation, tests,
 % and benchmarks as separate evidence layers, not as one undifferentiated proof.
 
-\subsection{Terminological Conventions}
+\subsection{Terminology}
 
-To avoid terminological drift, the remainder of the paper adheres to
-the vocabulary fixed in Table~\ref{tab:terminology}. Subsequent uses of
-these terms should be read in the precise senses stated there.
+Table~\ref{tab:terminology} fixes the small vocabulary needed before the
+protocol is defined. In particular, the distinction between payload and
+wire format, and the role of $\acct$ as cryptographic context, are used
+throughout the construction.
 
 \begin{table}[htbp]
-\caption{Terminological conventions adopted in this paper}
+\caption{Terminology used in the paper}
 \label{tab:terminology}
 \centering\small
 \begin{tabularx}{\textwidth}{@{}L{3.2cm}X@{}}
 \toprule
-Term & Fixed meaning \\
+Term & Meaning in this paper \\
 \midrule
 Wire format & The complete byte-level representation of a message on the channel, including the version prefix and protocol service fields \\
 Payload & The message body excluding the version prefix and any external wrappers \\
