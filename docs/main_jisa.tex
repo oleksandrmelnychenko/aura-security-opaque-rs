@@ -202,6 +202,8 @@ $\Label{key}$, $\Label{ksf}$, $\Label{salt}$, $\Label{ctx}$,
 $L_{\tau}$, and $\Label{comb}$; for the purposes of formal analysis,
 their stability and mutual distinctness matter, whereas the concrete
 textual representation of the implementation string does not.
+For byte strings, $\operatorname{Trunc}_n(X)$ denotes the leftmost
+$n$ octets of $X$.
 
 % ============================================================
 \section{Related Work and Existing Solutions}
@@ -716,20 +718,20 @@ $\mathrm{RegistrationRequest} = B$ (32~bytes).
 
 \textbf{Step~2 ($\mathcal{S} \to \mathcal{C}$).} Derivation of the OPRF
 key:
-\begin{equation}
-  s_{\mathrm{oprf}} =
-  \mathrm{HMAC}\!\bigl(\sigoprf, \Label{seed}\bigr)[0..31],
-  \label{eq:oprf-seed}
-\end{equation}
-\begin{equation}
-  k_{\mathrm{oprf}} = \mathrm{ScalarReduce}\!\bigl(
-    \mathrm{HMAC}\!\bigl(
-      s_{\mathrm{oprf}},\;
-      \Label{key} \| \acct \| \mathrm{ctr}
-    \bigr)\bigr),
-  \label{eq:oprf-key}
-\end{equation}
-where $\mathrm{ctr}$ is the smallest counter for which the resulting
+\begin{align}
+  s_{\mathrm{oprf}}
+    &= \operatorname{Trunc}_{32}\!\left(
+      \mathrm{HMAC}\!\bigl(\sigoprf, \Label{seed}\bigr)\right),
+    \label{eq:oprf-seed}\\
+  k_{\mathrm{oprf}}
+    &= \mathrm{ScalarReduce}\!\bigl(
+      \mathrm{HMAC}\!\bigl(
+        s_{\mathrm{oprf}},\;
+        \Label{key} \| \acct \| \mathrm{ctr}
+      \bigr)\bigr),
+    \label{eq:oprf-key}
+\end{align}
+where $\mathrm{ctr}$ is the smallest one-byte counter for which the resulting
 scalar is non-zero. The server computes
 $Z = k_{\mathrm{oprf}} \cdot B$; the key $k_{\mathrm{oprf}}$ is then
 immediately destroyed. The response is
@@ -753,8 +755,8 @@ KSF input and salt:
 \end{equation}
 \begin{equation}
   \mathrm{salt}_{\mathrm{ksf}} =
-  H\!\bigl(\Label{salt} \|
-  y_{\mathrm{oprf}}\bigr)[0..15].
+  \operatorname{Trunc}_{16}\!\left(
+    H\!\bigl(\Label{salt} \| y_{\mathrm{oprf}}\bigr)\right).
 \end{equation}
 The randomized password is then computed with Argon2id~\cite{biryukov2016}
 as
@@ -860,13 +862,18 @@ $v \,\|\, \mathrm{KE1}$ occupies 1273~bytes.
 
 \textbf{Hybrid combiner:}
 \begin{align}
-  \mathrm{combined\_ikm} &= dh_1 \| dh_2 \| dh_3 \| dh_4 \| ss_{\mathrm{kem}}
-  \quad(128 + 32 = 160~\text{bytes}),
+  \mathrm{IKM}_{\mathrm{cl}} &= dh_1 \| dh_2 \| dh_3 \| dh_4,
   \notag\\
-  \mathrm{salt} &= \Label{comb} \| \tau_H,
+  \mathrm{IKM}_{\mathrm{pq}} &= ss_{\mathrm{kem}},
   \notag\\
-  \mathrm{PRK} &= \mathrm{HKDF\text{-}Extract}(\mathrm{salt},
-    \mathrm{combined\_ikm}).
+  \mathrm{IKM}_{\mathrm{hyb}} &= \mathrm{IKM}_{\mathrm{cl}} \|
+    \mathrm{IKM}_{\mathrm{pq}}
+    \quad(128 + 32 = 160~\text{bytes}),
+  \notag\\
+  \mathrm{salt}_{\tau} &= \Label{comb} \| \tau_H,
+  \notag\\
+  \mathrm{PRK} &= \mathrm{HKDF\text{-}Extract}(\mathrm{salt}_{\tau},
+    \mathrm{IKM}_{\mathrm{hyb}}).
   \label{eq:hybrid-prk}
 \end{align}
 
@@ -896,14 +903,15 @@ $v \,\|\, \mathrm{KE1}$ occupies 1273~bytes.
   \node[block,pq] (kem) at (3.0,-2.0)
     {$\mathrm{IKM}_{\mathrm{pq}}$\\$ss_{\mathrm{kem}}$};
   \node[block,kdf] (combined) at (6.1,-1.05)
-    {$\mathrm{combined\_ikm}$\\$\mathrm{IKM}_{\mathrm{cl}}\|ss_{\mathrm{kem}}$};
+    {$\mathrm{IKM}_{\mathrm{hyb}}$\\$\mathrm{IKM}_{\mathrm{cl}}\|
+      \mathrm{IKM}_{\mathrm{pq}}$};
 
   \node[block,ctx] (acct) at (3.0,1.75)
     {$\acct \rightarrow \eta$\\account context};
   \node[block,ctx] (tau) at (6.1,1.75)
     {$\tau \rightarrow \tau_H$\\extended transcript};
   \node[block,ctx] (salt) at (9.2,1.75)
-    {$\mathrm{salt}$\\$\Label{comb}\|\tau_H$};
+    {$\mathrm{salt}_{\tau}$\\$\Label{comb}\|\tau_H$};
 
   \node[block,kdf] (extract) at (9.2,-1.05)
     {HKDF-Extract\\$\mathrm{PRK}$};
@@ -951,11 +959,13 @@ confirmation keys:
     \KLabel{macC}, 64).
   \label{eq:key-derivation}
 \end{align}
-\begin{align}
+\begin{equation}
+\begin{aligned}
   \mathrm{KE2} &= n_S \| E_S \| \mathrm{CredResp} \| {}\\
   &\quad \mathrm{HMAC}(K_{\mathrm{mac}}^S, \tau) \| ct_{\mathrm{kem}}
     \quad(1376~\text{bytes of payload}).
-\end{align}
+\end{aligned}
+\end{equation}
 In wire format, the message is $v \| \mathrm{KE2}$ and occupies
 1377~bytes.
 
@@ -1008,7 +1018,7 @@ wire-format version.
 
 \subsection{Formal Analysis of Security Properties}
 
-\paragraph{Offline guessing under a fixed trust boundary.}
+\paragraph{Offline guessing under a fixed trust boundary}
 The relevant compromise case is deliberately narrow. The adversary is
 allowed to obtain the passive server-side storage $\mathrm{rec}$ and the
 observable transcripts, but not $\sigoprf$. Under that condition, the
@@ -1031,7 +1041,7 @@ the OPRF output with a random value yields
 \[
   |\Pr[S_1] - \Pr[S_0]| \leq
   \mathrm{Adv}_{\mathrm{OPRF}}^{\mathrm{obliv}}
-  \leq \mathrm{Adv}_{\mathrm{Ristretto255}}^{\mathrm{CDH}}.
+  \leq \mathrm{Adv}_{\mathrm{CDH}}^{\mathrm{Ristretto255}}.
 \]
 \textbf{Envelope-hiding transition.} Next replace the envelope with an
 encryption of a random string, reducing the change in success probability
@@ -1045,7 +1055,7 @@ $\sigoprf$, the best available strategy collapses to online guessing,
 whence
 \[
   \mathrm{Adv}^{\mathrm{dict}} \leq
-  \mathrm{Adv}_{\mathrm{Ristretto255}}^{\mathrm{CDH}} +
+  \mathrm{Adv}_{\mathrm{CDH}}^{\mathrm{Ristretto255}} +
   \mathrm{Adv}_{\mathrm{XSalsa20}}^{\mathrm{IND\text{-}CPA}} +
   \frac{q_{\mathrm{on}}}{|\mathcal{D}|}.
 \]
@@ -1102,7 +1112,7 @@ by
 \]
 \end{claim}
 
-\paragraph{Interpretive claim on the AND property of the hybrid combiner.}
+\paragraph{Interpretive claim on the AND property of the hybrid combiner}
 Let
 \[
   \mathrm{IKM}_{\mathrm{cl}} = dh_1 \| dh_2 \| dh_3 \| dh_4,\qquad
@@ -1612,7 +1622,7 @@ network volume: the complete handshake occupies
 2715~bytes in wire format, that is, 2272~bytes more than the classical
 variant at the same three-message interaction profile.
 
-\paragraph{Comparative claim relative to classical OPAQUE.}
+\paragraph{Comparative claim relative to classical OPAQUE}
 Let $M_{\mathrm{opq}}, R_{\mathrm{opq}}, C_{\mathrm{opq}}, W_{\mathrm{opq}}$
 denote, respectively, the message count, network round-trip cost,
 cryptographic computation, and communication volume of canonical
