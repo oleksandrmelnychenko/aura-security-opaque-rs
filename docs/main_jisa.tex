@@ -1,12 +1,12 @@
 % ============================================================
 %  Hybrid PQ-OPAQUE — Full Journal Paper
 %  Target template: Elsevier elsarticle (JISA-oriented draft)
-%  Compiler: pdfLaTeX
+%  Compiler: Tectonic/XeTeX or pdfLaTeX-compatible engines
 % ============================================================
 \documentclass[preprint,12pt]{elsarticle}
 \biboptions{numbers}
 
-% ── Language & Encoding (pdfLaTeX) ───────────────────────────
+% ── Language & Encoding ──────────────────────────────────────
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
 \usepackage{lmodern}
@@ -32,6 +32,8 @@
 \usepackage{longtable}
 \usepackage{makecell}
 \usepackage{lscape}
+\usepackage{float}
+\usepackage{placeins}
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta,positioning,shapes.geometric}
 
@@ -47,9 +49,21 @@
 \hbadness=10000
 \vbadness=10000
 \raggedbottom
-\setlength{\textfloatsep}{10pt plus 2pt minus 4pt}
-\setlength{\floatsep}{8pt plus 2pt minus 2pt}
-\setlength{\intextsep}{10pt plus 2pt minus 2pt}
+\setlength{\textfloatsep}{7pt plus 1pt minus 2pt}
+\setlength{\floatsep}{6pt plus 1pt minus 1pt}
+\setlength{\intextsep}{7pt plus 1pt minus 1pt}
+\setcounter{topnumber}{5}
+\setcounter{bottomnumber}{4}
+\setcounter{totalnumber}{8}
+\renewcommand{\topfraction}{0.95}
+\renewcommand{\bottomfraction}{0.85}
+\renewcommand{\textfraction}{0.05}
+\renewcommand{\floatpagefraction}{0.75}
+\makeatletter
+\setlength{\@fptop}{0pt}
+\setlength{\@fpsep}{8pt plus 1fil}
+\setlength{\@fpbot}{0pt plus 1fil}
+\makeatother
 
 % ── Hyperlinks ───────────────────────────────────────────────
 \usepackage{hyperref}
@@ -583,43 +597,7 @@ absence of side channels or memory-safety bugs in external crates. \\
 
 \begin{figure}[htbp]
 \centering
-\resizebox{0.96\textwidth}{!}{%
-\begin{tikzpicture}[
-  font=\small,
-  >=Stealth,
-  included/.style={draw,rounded corners=2pt,fill=eclgreen!9,
-    minimum width=3.25cm,minimum height=0.75cm,align=center},
-  excluded/.style={draw,rounded corners=2pt,fill=eclred!8,
-    minimum width=3.25cm,minimum height=0.75cm,align=center},
-  core/.style={draw,rounded corners=2pt,fill=eclblue!8,
-    minimum width=3.65cm,minimum height=0.92cm,align=center,font=\bfseries},
-  arrow/.style={-{Stealth[length=2mm]},thick}
-]
-  \node[core] (protocol) at (0,0) {Hybrid PQ-OPAQUE\\claim surface};
-
-  \node[included] (network) at (-5.3,1.8) {active network\\control};
-  \node[included] (database) at (-5.3,0.6) {passive database\\disclosure};
-  \node[included] (ltkeys) at (-5.3,-0.6) {post-session\\long-term keys};
-  \node[included] (quantum) at (-5.3,-1.8) {quantum recovery\\of classical DH};
-
-  \node[excluded] (oprf) at (5.3,1.5) {$\sigoprf$ compromise};
-  \node[excluded] (endpoint) at (5.3,0.3) {live endpoint\\compromise};
-  \node[excluded] (rng) at (5.3,-0.9) {malicious RNG and\\side channels};
-  \node[excluded] (dos) at (5.3,-2.1) {resource-exhaustion\\availability};
-
-  \foreach \x in {network,database,ltkeys,quantum} {
-    \draw[arrow,eclgreen!70!black] (\x.east) -- (protocol.west);
-  }
-  \foreach \x in {oprf,endpoint,rng,dos} {
-    \draw[arrow,eclred!70!black] (protocol.east) -- (\x.west);
-  }
-
-  \node[anchor=south,font=\scriptsize\bfseries,text=eclgreen!45!black]
-    at (-5.3,2.42) {inside the paper's claims};
-  \node[anchor=south,font=\scriptsize\bfseries,text=eclred!65!black]
-    at (5.3,2.12) {requires separate analysis};
-\end{tikzpicture}
-}
+\includegraphics[width=\textwidth]{figures/figure1.png}
 \caption{Threat-boundary map for the main claims. The construction is
 analyzed against active network control, database disclosure, post-session
 long-term key exposure, and later quantum recovery of classical DH terms.
@@ -706,57 +684,10 @@ to nor reconstructed by the record-holding responder. Authentication
 remains a three-message KE1--KE2--KE3 exchange. The only post-quantum
 state added to authentication is ephemeral ML-KEM-768 material:
 $pk_{\mathrm{kem}}$ in KE1 and $ct_{\mathrm{kem}}$ in KE2.
-Figure~\ref{fig:protocol-flow} shows where these values, together with
-the account-context hash $\eta$, enter the transcript and key schedule.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[
-  font=\small,
-  >=Stealth,
-  lane/.style={draw,rounded corners=2pt,fill=gray!8,minimum width=3.2cm,
-    minimum height=0.65cm,align=center},
-  phase/.style={draw,rounded corners=2pt,fill=eclgreen!10,minimum width=3.6cm,
-    minimum height=0.45cm,align=center,font=\small\bfseries},
-  note/.style={draw,rounded corners=2pt,fill=gray!5,align=center,
-    inner sep=4pt,font=\scriptsize},
-  msg/.style={-{Stealth[length=2mm]},thick},
-  bind/.style={-{Stealth[length=1.7mm]},thick,eclgreen!80!black}
-]
-  \node[lane] (client) at (0,0) {Initiator $\mathcal{C}$};
-  \node[lane] (server) at (11,0) {Record-holding\\responder $\mathcal{S}$};
-  \draw[gray!35,dashed] (0,-0.45) -- (0,-8.35);
-  \draw[gray!35,dashed] (11,-0.45) -- (11,-8.35);
-
-  \node[phase] at (5.5,-0.9) {Registration};
-  \draw[msg,eclblue!85] (0,-1.55) -- node[above,font=\scriptsize]
-    {$B$} (11,-1.55);
-  \draw[msg,eclblue!85] (11,-2.25) -- node[above,font=\scriptsize]
-    {$Z \,\|\, PK_S$} (0,-2.25);
-  \node[note] (record) at (2.35,-3.05)
-    {sealed envelope\\and $PK_C$};
-  \draw[bind] (0,-2.45) -- (record.west);
-
-  \node[phase] at (5.5,-4.05) {Authentication};
-  \draw[msg,eclgold!85!black] (0,-4.75) -- node[above,font=\scriptsize]
-    {$\mathrm{KE1}: B_{\mathrm{auth}} \,\|\, E_C \,\|\, n_C \,\|\, pk_{\mathrm{kem}}$}
-    (11,-4.75);
-  \draw[msg,eclgold!85!black] (11,-5.55) -- node[above,font=\scriptsize]
-    {$\mathrm{KE2}: n_S \,\|\, E_S \,\|\, \mathrm{CredResp}
-      \,\|\, \mathrm{MAC}_S \,\|\, ct_{\mathrm{kem}}$}
-    (0,-5.55);
-  \draw[msg,eclgold!85!black] (0,-6.35) -- node[above,font=\scriptsize]
-    {$\mathrm{KE3}: \mathrm{MAC}_C$}
-    (11,-6.35);
-
-  \node[note,fill=eclgreen!8] (acctnote) at (5.5,-7.45)
-    {$\acct \rightarrow \eta,\quad
-     (pk_{\mathrm{kem}},ct_{\mathrm{kem}},\eta) \subset \tau,\quad
-     \tau \rightarrow \tau_H$};
-  \draw[bind] (acctnote.north) -- (5.5,-6.70);
-\end{tikzpicture}
-}
+\includegraphics[width=\textwidth]{figures/figure2.png}
 \caption{Hybrid PQ-OPAQUE message flow between initiator $\mathcal{C}$
 and record-holding responder $\mathcal{S}$. ML-KEM public and ciphertext
 material are carried in KE1 and KE2, while account and transcript binding
@@ -764,11 +695,9 @@ feed the authenticated key schedule without adding an authentication
 message.}
 \label{fig:protocol-flow}
 \end{figure}
+\FloatBarrier
 
-Table~\ref{tab:primitives} fixes the concrete primitive choices used by
-the construction and by the implementation evaluated below.
-
-\begin{table}[htbp]
+\begin{table}[H]
 \caption{Cryptographic primitives used in Hybrid PQ-OPAQUE}
 \label{tab:primitives}
 \centering\small
@@ -789,12 +718,19 @@ Constant-time comparison & Bytewise without early exit & \codeid{subtle} & --- \
 \bottomrule
 \end{tabular*}
 \end{table}
+\FloatBarrier
+
+Figure~\ref{fig:protocol-flow} shows where these values, together with
+the account-context hash $\eta$, enter the transcript and key schedule.
+
+Table~\ref{tab:primitives} fixes the concrete primitive choices used by
+the construction and by the implementation evaluated below.
 
 The authentication-message sizes in Table~\ref{tab:message-sizes}
 separate payload size from wire-format size; the latter includes the
 one-byte protocol version prefix.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \caption{Authentication-message sizes in payload and wire format}
 \label{tab:message-sizes}
 \centering\small
@@ -812,40 +748,11 @@ KE3 & 64 bytes & 64 bytes & 65 bytes & $0$ \\
 \end{tabular}
 }
 \end{table}
+\FloatBarrier
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\begin{tikzpicture}[x=1.95cm,y=0.0031cm,font=\small]
-  \draw[->,gray!75] (0,0) -- (3.9,0) node[right] {Message};
-  \draw[->,gray!75] (0,0) -- (0,1520) node[above] {Bytes};
-
-  \foreach \yy in {0,500,1000,1500} {
-    \draw[gray!20] (0,\yy) -- (3.7,\yy);
-    \node[left,gray!80] at (0,\yy) {\yy};
-  }
-
-  % KE1
-  \fill[eclblue!75] (0.30,0) rectangle (0.55,88);
-  \fill[eclgold!85] (0.62,0) rectangle (0.87,1273);
-  \node[above,font=\scriptsize,eclgold!80!black] at (0.745,1273) {1273};
-  \node[below] at (0.59,0) {KE1};
-
-  % KE2
-  \fill[eclblue!75] (1.45,0) rectangle (1.70,288);
-  \fill[eclgold!85] (1.77,0) rectangle (2.02,1377);
-  \node[above,font=\scriptsize,eclgold!80!black] at (1.895,1377) {1377};
-  \node[below] at (1.74,0) {KE2};
-
-  % KE3
-  \fill[eclblue!75] (2.60,0) rectangle (2.85,64);
-  \fill[eclgold!85] (2.92,0) rectangle (3.17,65);
-  \node[below] at (2.89,0) {KE3};
-
-  \draw[eclblue!75,fill=eclblue!75] (2.05,1462) rectangle (2.22,1507);
-  \node[anchor=west,font=\scriptsize] at (2.28,1484) {Classical payload};
-  \draw[eclgold!85!black,fill=eclgold!85] (2.05,1388) rectangle (2.22,1433);
-  \node[anchor=west,font=\scriptsize] at (2.28,1410) {Hybrid wire format};
-\end{tikzpicture}
+\includegraphics[width=\textwidth]{figures/figure3.png}
 \caption{Comparison of authentication-message sizes: the additional
 wire-format overhead is concentrated in KE1 and KE2, whereas KE3
 remains essentially unchanged.}
@@ -1130,64 +1037,7 @@ hash into the derived session keys.
 
 \begin{figure}[htbp]
 \centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[
-  font=\small,
-  >=Stealth,
-  block/.style={draw,rounded corners=2pt,minimum width=2.9cm,
-    minimum height=0.72cm,align=center,inner sep=4pt},
-  smallblock/.style={draw,rounded corners=2pt,minimum width=2.15cm,
-    minimum height=0.58cm,align=center,inner sep=3pt,font=\scriptsize},
-  arrow/.style={-{Stealth[length=2mm]},thick},
-  cl/.style={fill=eclblue!9,draw=eclblue!75!black},
-  pq/.style={fill=eclgold!13,draw=eclgold!85!black},
-  ctx/.style={fill=eclgreen!10,draw=eclgreen!75!black},
-  kdf/.style={fill=gray!8,draw=gray!70!black}
-]
-  \node[smallblock,cl] (dh1) at (0,0.9) {$dh_1$};
-  \node[smallblock,cl] (dh2) at (0,0.2) {$dh_2$};
-  \node[smallblock,cl] (dh3) at (0,-0.5) {$dh_3$};
-  \node[smallblock,cl] (dh4) at (0,-1.2) {$dh_4$};
-  \node[block,cl] (classical) at (3.0,-0.15)
-    {$\mathrm{IKM}_{\mathrm{cl}}$\\$dh_1\|dh_2\|dh_3\|dh_4$};
-
-  \node[block,pq] (kem) at (3.0,-2.0)
-    {$\mathrm{IKM}_{\mathrm{pq}}$\\$ss_{\mathrm{kem}}$};
-  \node[block,kdf] (combined) at (6.1,-1.05)
-    {$\mathrm{IKM}_{\mathrm{hyb}}$\\$\mathrm{IKM}_{\mathrm{cl}}\|
-      \mathrm{IKM}_{\mathrm{pq}}$};
-
-  \node[block,ctx] (acct) at (3.0,1.75)
-    {$\acct \rightarrow \eta$\\account context};
-  \node[block,ctx] (tau) at (6.1,1.75)
-    {$\tau \rightarrow \tau_H$\\extended transcript};
-  \node[block,ctx] (salt) at (9.2,1.75)
-    {$\mathrm{salt}_{\tau}$\\$\Label{comb}\|\tau_H$};
-
-  \node[block,kdf] (extract) at (9.2,-1.05)
-    {HKDF-Extract\\$\mathrm{PRK}$};
-  \node[block,kdf] (expand) at (12.2,-1.05)
-    {HKDF-Expand\\derived keys};
-  \node[smallblock,kdf] (ks) at (15.0,0.35) {$K_s$};
-  \node[smallblock,kdf] (km) at (15.0,-0.35) {$K_m$};
-  \node[smallblock,kdf] (macs) at (15.0,-1.05) {$K_{\mathrm{mac}}^S$};
-  \node[smallblock,kdf] (macc) at (15.0,-1.75) {$K_{\mathrm{mac}}^C$};
-
-  \foreach \x in {dh1,dh2,dh3,dh4} {
-    \draw[arrow,eclblue!75!black] (\x.east) -- (classical.west);
-  }
-  \draw[arrow,eclblue!75!black] (classical.east) -- (combined.west);
-  \draw[arrow,eclgold!85!black] (kem.east) -- (combined.west);
-  \draw[arrow,gray!75!black] (combined.east) -- (extract.west);
-  \draw[arrow,eclgreen!75!black] (acct.east) -- (tau.west);
-  \draw[arrow,eclgreen!75!black] (tau.east) -- (salt.west);
-  \draw[arrow,eclgreen!75!black] (salt.south) -- (extract.north);
-  \draw[arrow,gray!75!black] (extract.east) -- (expand.west);
-  \foreach \x in {ks,km,macs,macc} {
-    \draw[arrow,gray!75!black] (expand.east) -- (\x.west);
-  }
-\end{tikzpicture}
-}
+\includegraphics[width=\textwidth]{figures/figure4.png}
 \caption{Transcript-bound hybrid key schedule. Classical 4DH material and
 the ML-KEM shared secret are extracted under a transcript-derived salt before
 expansion into session, master, and confirmation keys.}
@@ -1464,53 +1314,7 @@ Figure~\ref{fig:hybrid-condition-surface} visualizes this interpretation.
 
 \begin{figure}[htbp]
 \centering
-\resizebox{0.88\textwidth}{!}{%
-\begin{tikzpicture}[
-  font=\scriptsize,
-  header/.style={font=\scriptsize\bfseries,align=center},
-  note/.style={draw=gray!55,rounded corners=2pt,fill=gray!6,
-    align=center,inner sep=3pt,font=\scriptsize},
-  >=Stealth
-]
-  \coordinate (A) at (1.6,0.1);
-  \coordinate (B) at (7.6,2.5);
-
-  \fill[eclgreen!10] (1.6,1.3) rectangle (4.6,2.5);
-  \fill[eclgreen!10] (4.6,1.3) rectangle (7.6,2.5);
-  \fill[eclgreen!10] (1.6,0.1) rectangle (4.6,1.3);
-  \fill[eclred!12] (4.6,0.1) rectangle (7.6,1.3);
-
-  \draw[gray!65] (A) rectangle (B);
-  \draw[gray!65] (4.6,0.1) -- (4.6,2.5);
-  \draw[gray!65] (1.6,1.3) -- (7.6,1.3);
-
-  \node[header,text=eclblue!75!black] at (4.6,3.35)
-    {classical source $\mathrm{IKM}_{\mathrm{cl}}$};
-  \draw[->,thick,eclblue!75!black] (1.6,3.05) -- (7.6,3.05);
-
-  \node[header,rotate=90,text=eclgold!70!black] at (-0.20,1.30)
-    {ML-KEM source $\mathrm{IKM}_{\mathrm{pq}}$};
-  \draw[->,thick,eclgold!80!black] (0.75,0.10) -- (0.75,2.50);
-
-  \node[header] at (3.10,2.78) {hidden};
-  \node[header] at (6.10,2.78) {recoverable};
-  \node[header,anchor=east] at (1.35,1.90) {hidden};
-  \node[header,anchor=east] at (1.35,0.70) {recoverable};
-
-  \node[align=center,text=eclgreen!35!black,text width=2.65cm] at (3.10,1.90)
-    {both sources hidden\\$\mathrm{PRK}$ pseudorandom};
-  \node[align=center,text=eclgreen!35!black,text width=2.65cm] at (6.10,1.90)
-    {ML-KEM hidden\\$\mathrm{PRK}$ pseudorandom};
-  \node[align=center,text=eclgreen!35!black,text width=2.65cm] at (3.10,0.70)
-    {classical hidden\\$\mathrm{PRK}$ pseudorandom};
-  \node[align=center,text=eclred!65!black,text width=2.65cm] at (6.10,0.70)
-    {both recoverable\\outside the bound};
-
-  \node[note,text=eclred!70!black,text width=6.6cm] at (4.60,-0.48)
-    {Extractor loss in all cases:
-    $\mathrm{Adv}_{\mathrm{HKDF}}^{\mathrm{ext}}$.};
-\end{tikzpicture}
-}
+\includegraphics[width=\textwidth]{figures/figure5.png}
 \caption{Condition map for the hybrid-combiner interpretation used in
 Eq.~\eqref{eq:hybrid-advantage-bound}. Rows and columns describe whether
 the classical or ML-KEM source remains hidden relative to a fixed
@@ -1942,51 +1746,7 @@ the detailed benchmark tables.
 
 \begin{figure}[htbp]
 \centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[x=1.28cm,y=0.62cm,font=\small,>=Stealth]
-  \draw[->,gray!75] (0,0) -- (6.55,0) node[right] {time};
-  \foreach \x/\lab in {
-    0/{1~$\mu$s},
-    1/{10~$\mu$s},
-    2/{100~$\mu$s},
-    3/{1~ms},
-    4/{10~ms},
-    5/{100~ms},
-    6/{1~s}
-  } {
-    \draw[gray!25] (\x,0.12) -- (\x,6.05);
-    \draw[gray!65] (\x,0.04) -- (\x,-0.04);
-    \node[below,font=\scriptsize] at (\x,-0.05) {\lab};
-  }
-
-  \node[anchor=east] at (-0.14,5.45) {4DH profile};
-  \fill[eclblue!72] (0,5.22) rectangle (2.39,5.68);
-  \node[anchor=west,font=\scriptsize] at (2.45,5.45) {245.57~$\mu$s};
-
-  \node[anchor=east] at (-0.14,4.55) {ML-KEM round};
-  \fill[eclgold!86] (0,4.32) rectangle (2.69,4.78);
-  \node[anchor=west,font=\scriptsize] at (2.75,4.55) {492.30~$\mu$s};
-
-  \node[anchor=east] at (-0.14,3.65) {KE2 generation};
-  \fill[eclgreen!70] (0,3.42) rectangle (2.77,3.88);
-  \node[anchor=west,font=\scriptsize] at (2.83,3.65) {592.69~$\mu$s};
-
-  \node[anchor=east] at (-0.14,2.75) {End-to-end auth};
-  \fill[gray!62] (0,2.52) rectangle (5.92,2.98);
-  \node[anchor=west,font=\scriptsize] at (5.98,2.75) {836.11~ms};
-
-  \node[anchor=east] at (-0.14,1.85) {Argon2id};
-  \fill[eclred!70] (0,1.62) rectangle (5.93,2.08);
-  \node[anchor=west,font=\scriptsize] at (5.99,1.85) {841.37~ms};
-
-  \node[anchor=east] at (-0.14,0.95) {KE3 generation};
-  \fill[eclred!45] (0,0.72) rectangle (6.04,1.18);
-  \node[anchor=west,font=\scriptsize] at (6.10,0.95) {1.101~s};
-
-  \node[anchor=west,font=\scriptsize,gray!70] at (0,6.32)
-    {log-scale, Criterion mean on the Linux/Xeon benchmark platform};
-\end{tikzpicture}
-}
+\includegraphics[width=\textwidth]{figures/figure6.png}
 \caption{Runtime profile on the Linux/Xeon benchmark platform. The
 password-hardening step dominates end-to-end latency, while the
 post-quantum and classical key-exchange components remain sub-millisecond.}
