@@ -1,0 +1,12 @@
+target/
+.git/
+.idea/
+.vscode/
+.claude/
+__pycache__/
+*.pyc
+*.swp
+*.swo
+*~
+.DS_Store
+**/*.rs.bk
