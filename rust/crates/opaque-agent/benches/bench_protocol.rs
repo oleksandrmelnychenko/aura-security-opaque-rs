@@ -96,7 +96,7 @@ fn bench_registration_finalize(c: &mut Criterion) {
     create_registration_response(&responder, &serialize_req(&req), ACCOUNT_ID, &mut resp).unwrap();
 
     let mut group = c.benchmark_group("registration");
-    group.sample_size(10);
+    group.sample_size(20);
     group.bench_function("finalize", |b| {
         b.iter_batched(
             || {
@@ -196,7 +196,7 @@ fn bench_auth_ke3(c: &mut Criterion) {
     build_credentials(&record_bytes, &mut credentials).unwrap();
 
     let mut group = c.benchmark_group("authentication");
-    group.sample_size(10);
+    group.sample_size(20);
     group.bench_function("generate_ke3", |b| {
         b.iter_batched(
             || {

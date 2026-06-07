@@ -48,6 +48,30 @@ fn bench_ristretto_3dh(c: &mut Criterion) {
     });
 }
 
+fn bench_ristretto_4dh(c: &mut Criterion) {
+    let sk1 = crypto::random_nonzero_scalar().unwrap();
+    let sk2 = crypto::random_nonzero_scalar().unwrap();
+    let sk3 = crypto::random_nonzero_scalar().unwrap();
+    let sk4 = crypto::random_nonzero_scalar().unwrap();
+    let pk1 = crypto::scalarmult_base(&crypto::random_nonzero_scalar().unwrap()).unwrap();
+    let pk2 = crypto::scalarmult_base(&crypto::random_nonzero_scalar().unwrap()).unwrap();
+    let pk3 = crypto::scalarmult_base(&crypto::random_nonzero_scalar().unwrap()).unwrap();
+    let pk4 = crypto::scalarmult_base(&crypto::random_nonzero_scalar().unwrap()).unwrap();
+
+    c.bench_function("ristretto255/4dh", |b| {
+        let mut r1 = [0u8; PUBLIC_KEY_LENGTH];
+        let mut r2 = [0u8; PUBLIC_KEY_LENGTH];
+        let mut r3 = [0u8; PUBLIC_KEY_LENGTH];
+        let mut r4 = [0u8; PUBLIC_KEY_LENGTH];
+        b.iter(|| {
+            crypto::scalar_mult(&sk1, &pk1, &mut r1).unwrap();
+            crypto::scalar_mult(&sk2, &pk2, &mut r2).unwrap();
+            crypto::scalar_mult(&sk3, &pk3, &mut r3).unwrap();
+            crypto::scalar_mult(&sk4, &pk4, &mut r4).unwrap();
+        })
+    });
+}
+
 fn bench_mlkem_keygen(c: &mut Criterion) {
     c.bench_function("ml-kem-768/keygen", |b| {
         let mut pk = vec![0u8; pq::KEM_PUBLIC_KEY_LENGTH];
@@ -253,6 +277,7 @@ criterion_group!(
     bench_ristretto_keygen,
     bench_ristretto_dh,
     bench_ristretto_3dh,
+    bench_ristretto_4dh,
 );
 criterion_group!(
     mlkem,
