@@ -106,9 +106,9 @@
 
 \title{Hybrid Post-Quantum Authentication from OPAQUE and ML-KEM-768: Construction, Formal Analysis, and a Reproducible Implementation}
 
-\author[aff1]{Oleksandr Melnychenko}
+\author{Oleksandr Melnychenko}
 
-\address[aff1]{Khmelnytskyi National University, Khmelnytskyi, Ukraine}
+\address{Khmelnytskyi National University, Khmelnytskyi, Ukraine}
 
 \journal{Journal of Information Security and Applications}
 
@@ -157,7 +157,7 @@ OPAQUE \sep PAKE \sep ML-KEM-768 \sep post-quantum cryptography \sep hybrid key 
 
 \subsection{Motivation}
 
-Password authentication remains widely deployed in contemporary distributed systems. Survey evidence indicates that more than 80\% of authentication procedures in web applications and network services still rely on passwords~\cite{bonneau2012,florencio2007}. Password-authenticated key-exchange protocols (PAKEs) allow two parties sharing a low-entropy secret to establish a protected channel without revealing that secret to an adversary~\cite{bellare2000}. Among augmented PAKE constructions, OPAQUE~\cite{jarecki2018} is a well studied scheme: under compromise of the authentication database alone, the server stores a cryptographic record rather than a password equivalent~\cite{ietf-opaque}. In deployed systems, this property depends on a clear trust boundary, because compromise of the global secret from which OPRF keys are derived is distinct from compromise of a passive record store.
+Password authentication remains widely deployed in contemporary distributed systems. Survey evidence indicates that more than 80\% of web-application and network-service authentication flows still rely on passwords~\cite{bonneau2012,florencio2007}. Password-authenticated key-exchange protocols (PAKEs) allow two parties sharing a low-entropy secret to establish a protected channel without revealing that secret to an adversary~\cite{bellare2000}. Among augmented PAKE constructions, OPAQUE~\cite{jarecki2018} is a well studied scheme: under compromise of the authentication database alone, the server stores a cryptographic record rather than a password equivalent~\cite{ietf-opaque}. In deployed systems, this property depends on a clear trust boundary, because compromise of the global secret from which OPRF keys are derived is distinct from compromise of a passive record store.
 
 This reliance on classical hardness assumptions is a concern in the presence of quantum adversaries. Shor's algorithm~\cite{shor1994} applies to cryptosystems based on the discrete logarithm problem, including elliptic-curve key exchange and PAKE constructions built on related assumptions~\cite{bernstein2017}. Earlier estimates suggested that breaking Ristretto255/Curve25519 would require a cryptographically relevant quantum computer with approximately 2{,}330 logical qubits~\cite{roetteler2017}. More recent work reports two resource profiles for Shor's algorithm against 256-bit ECDLP over the \codeid{secp256k1} curve: no more than 1200 logical qubits with 90 million Toffoli operations, or no more than 1450 logical qubits with 70 million Toffoli operations~\cite{babbush2026}. These figures are not parameter-specific estimates for Ristretto255. They are used here only as a contemporary calibration point for 256-bit elliptic-curve migration risk. The store-now-decrypt-later strategy~\cite{mosca2018}, in which an adversary archives encrypted traffic for future decryption, adds to that motivation for systems protecting long-lived confidential data.
 
@@ -263,7 +263,7 @@ Account identifier ($\acct$) & A stable byte string identifying the user's accou
 Initiator $\mathcal{C}$ & The party that holds the password, creates KE1, verifies KE2, and sends KE3 \\
 Record-holding responder $\mathcal{S}$ & The augmented-PAKE party that stores the registration record, evaluates the OPRF, creates KE2, and verifies KE3 \\
 Augmented PAKE (aPAKE) & A class of password-authenticated key-exchange protocols in which the server stores a verifier rather than the password itself or its direct equivalent \\
-Key-derivation scheme & The sequence of extraction and expansion procedures that produces session and auxiliary keys \\
+Key-derivation scheme & The sequence of extraction and expansion steps that produces session and auxiliary keys \\
 Research artifact & Source code, formal models, tests, and benchmarks needed for independent reproduction of the reported results \\
 \bottomrule
 \end{tabularx}
@@ -561,7 +561,7 @@ analytics, and logging paths. A conforming deployment should keep
 $\sigoprf$ in a KMS, HSM, or equivalent secret-management boundary;
 limit derivation access to the authentication service; exclude plaintext
 $\sigoprf$ from snapshots, crash dumps, and support bundles; audit
-derivation calls; and define an incident procedure in which suspected
+derivation calls; and define an incident-response path in which suspected
 $\sigoprf$ exposure is treated as verifier compromise, requiring root
 rotation, account re-enrolment or password reset, and temporary rate
 tightening.
@@ -1178,7 +1178,7 @@ computing $y_{\mathrm{oprf}}'$, then
 $x_{\mathrm{ksf}}'$, $\mathrm{salt}_{\mathrm{ksf}}'$, and finally one
 attempt to open the envelope. The cost of a single guess is dominated,
 both asymptotically and empirically, by Argon2id, that is, by the
-procedure~\eqref{eq:rwd}:
+derivation in~\eqref{eq:rwd}:
 \[
   T_{\mathrm{guess}} \approx T_{\mathrm{Argon2id}},\qquad
   C_{\mathrm{offline}} \approx |\mathcal{D}| \cdot T_{\mathrm{guess}}.
@@ -1792,7 +1792,7 @@ ML-KEM-768 round ($492.30~\mu$s) and the measured 4DH protocol profile
 post-quantum layer does not alter the computational class of the
 protocol. Second, Argon2id ($841.37$~ms in isolated measurement)
 dominates all other components and determines the perceived
-authentication latency. Third, the hybrid key-extraction procedure
+authentication latency. Third, the hybrid key-extraction step
 ($2.49~\mu$s) is negligible relative to the KSF and does not
 constitute a separate bottleneck.
 
