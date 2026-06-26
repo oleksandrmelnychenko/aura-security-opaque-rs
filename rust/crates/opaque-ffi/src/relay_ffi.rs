@@ -88,7 +88,7 @@ use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use opaque_core::protocol;
 use opaque_core::types::{
@@ -237,13 +237,13 @@ pub unsafe extern "C" fn opaque_relay_keypair_generate(handle: *mut *mut std::ff
         let Ok(keypair) = ResponderKeyPair::generate() else {
             return ffi_error_to_int(OpaqueError::CryptoError);
         };
-        let mut oprf_seed = [0u8; OPRF_SEED_LENGTH];
-        if opaque_core::crypto::random_bytes(&mut oprf_seed).is_err() {
+        let mut oprf_seed = Zeroizing::new([0u8; OPRF_SEED_LENGTH]);
+        if opaque_core::crypto::random_bytes(&mut *oprf_seed).is_err() {
             return ffi_error_to_int(OpaqueError::CryptoError);
         }
         let boxed = Box::new(RelayKeypairHandle {
             keypair,
-            oprf_seed,
+            oprf_seed: *oprf_seed,
             in_use: AtomicBool::new(false),
         });
         *handle = Box::into_raw(boxed) as *mut std::ffi::c_void;
@@ -928,17 +928,15 @@ pub unsafe extern "C" fn opaque_relay_create_with_keys(
         let sk = std::slice::from_raw_parts(private_key, private_key_len);
         let pk = std::slice::from_raw_parts(public_key, public_key_len);
         let seed_slice = std::slice::from_raw_parts(oprf_seed_ptr, OPRF_SEED_LENGTH);
-        let mut oprf_seed = [0u8; OPRF_SEED_LENGTH];
+        let mut oprf_seed = Zeroizing::new([0u8; OPRF_SEED_LENGTH]);
         oprf_seed.copy_from_slice(seed_slice);
 
         let Ok(keypair) = ResponderKeyPair::from_keys(sk, pk) else {
             return OpaqueError::InvalidInput.to_c_int();
         };
-        let Ok(responder) = OpaqueResponder::new(keypair, oprf_seed) else {
-            oprf_seed.zeroize();
+        let Ok(responder) = OpaqueResponder::new(keypair, *oprf_seed) else {
             return OpaqueError::InvalidInput.to_c_int();
         };
-        oprf_seed.zeroize();
         let boxed = Box::new(RelayHandle {
             responder,
             in_use: AtomicBool::new(false),

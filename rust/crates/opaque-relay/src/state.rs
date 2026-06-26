@@ -12,7 +12,7 @@ use opaque_core::types::{
     HASH_LENGTH, MAC_LENGTH, MASTER_KEY_LENGTH, NONCE_LENGTH, OPRF_SEED_LENGTH, PRIVATE_KEY_LENGTH,
     PUBLIC_KEY_LENGTH, REGISTRATION_RESPONSE_LENGTH, STATE_MAX_LIFETIME_SECS,
 };
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResponderPhase {
@@ -266,8 +266,9 @@ impl Drop for OpaqueResponder {
 
 impl OpaqueResponder {
     pub fn new(keypair: ResponderKeyPair, oprf_seed: [u8; OPRF_SEED_LENGTH]) -> OpaqueResult<Self> {
+        let oprf_seed = Zeroizing::new(oprf_seed);
         opaque_core::crypto::validate_public_key(&keypair.public_key)?;
-        let evaluator = InMemoryEvaluator::new(oprf_seed)?;
+        let evaluator = InMemoryEvaluator::new(*oprf_seed)?;
         Ok(Self {
             keypair,
             evaluator: Box::new(evaluator),
@@ -284,10 +285,9 @@ impl OpaqueResponder {
 
     pub fn generate() -> OpaqueResult<Self> {
         let keypair = ResponderKeyPair::generate()?;
-        let mut oprf_seed = [0u8; OPRF_SEED_LENGTH];
-        opaque_core::crypto::random_bytes(&mut oprf_seed)?;
-        let evaluator = InMemoryEvaluator::new(oprf_seed)?;
-        oprf_seed.zeroize();
+        let mut oprf_seed = Zeroizing::new([0u8; OPRF_SEED_LENGTH]);
+        opaque_core::crypto::random_bytes(&mut *oprf_seed)?;
+        let evaluator = InMemoryEvaluator::new(*oprf_seed)?;
         Ok(Self {
             keypair,
             evaluator: Box::new(evaluator),

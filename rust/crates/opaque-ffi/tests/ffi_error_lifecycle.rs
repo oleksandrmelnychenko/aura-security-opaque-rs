@@ -1,6 +1,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
+use opaque_core::crypto;
 use opaque_ffi as _;
 
 unsafe extern "C" {
@@ -12,6 +13,15 @@ unsafe extern "C" {
         key_buffer_size: usize,
     ) -> i32;
     fn opaque_relay_create(keypair_handle: *mut c_void, handle: *mut *mut c_void) -> i32;
+    fn opaque_relay_create_with_keys(
+        private_key: *const u8,
+        private_key_len: usize,
+        public_key: *const u8,
+        public_key_len: usize,
+        oprf_seed: *const u8,
+        oprf_seed_len: usize,
+        handle: *mut *mut c_void,
+    ) -> i32;
     fn opaque_relay_destroy(handle_ptr: *mut *mut c_void);
     fn opaque_relay_state_create(handle: *mut *mut c_void) -> i32;
     fn opaque_relay_state_destroy(handle_ptr: *mut *mut c_void);
@@ -57,6 +67,8 @@ unsafe extern "C" {
 }
 
 const PUBLIC_KEY_LENGTH: usize = 32;
+const PRIVATE_KEY_LENGTH: usize = 32;
+const OPRF_SEED_LENGTH: usize = 32;
 const KE1_LENGTH: usize = 1273;
 const KE2_LENGTH: usize = 1377;
 const KE3_LENGTH: usize = 65;
@@ -107,6 +119,54 @@ fn ffi_relay_preserves_unsupported_version_error_code() {
         opaque_relay_state_destroy(&mut relay_state);
         opaque_relay_destroy(&mut relay);
         opaque_relay_keypair_destroy(&mut keypair);
+    }
+}
+
+#[test]
+fn ffi_relay_create_with_keys_invalid_keypair_returns_error_and_null_handle() {
+    unsafe {
+        let private_key = [0x11u8; PRIVATE_KEY_LENGTH];
+        let invalid_public_key = [0u8; PUBLIC_KEY_LENGTH];
+        let oprf_seed = [0x42u8; OPRF_SEED_LENGTH];
+        let mut relay = ptr::null_mut();
+
+        let rc = opaque_relay_create_with_keys(
+            private_key.as_ptr(),
+            private_key.len(),
+            invalid_public_key.as_ptr(),
+            invalid_public_key.len(),
+            oprf_seed.as_ptr(),
+            oprf_seed.len(),
+            &mut relay,
+        );
+
+        assert_ne!(rc, 0);
+        assert!(relay.is_null());
+    }
+}
+
+#[test]
+fn ffi_relay_create_with_keys_valid_keypair_succeeds() {
+    unsafe {
+        let private_key = crypto::random_nonzero_scalar().unwrap();
+        let public_key = crypto::scalarmult_base(&private_key).unwrap();
+        let oprf_seed = [0x42u8; OPRF_SEED_LENGTH];
+        let mut relay = ptr::null_mut();
+
+        let rc = opaque_relay_create_with_keys(
+            private_key.as_ptr(),
+            private_key.len(),
+            public_key.as_ptr(),
+            public_key.len(),
+            oprf_seed.as_ptr(),
+            oprf_seed.len(),
+            &mut relay,
+        );
+
+        assert_eq!(rc, 0);
+        assert!(!relay.is_null());
+        opaque_relay_destroy(&mut relay);
+        assert!(relay.is_null());
     }
 }
 

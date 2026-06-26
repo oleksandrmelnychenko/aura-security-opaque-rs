@@ -7,7 +7,7 @@ use crate::types::{
     PUBLIC_KEY_LENGTH,
 };
 use labels::FAKE_CREDENTIALS_CONTEXT;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 const HASH_TO_GROUP_DOMAIN: u8 = 0x00;
 
@@ -110,10 +110,13 @@ pub struct InMemoryEvaluator {
 impl InMemoryEvaluator {
     pub fn new(oprf_seed: [u8; OPRF_SEED_LENGTH]) -> OpaqueResult<Self> {
         use crate::types::is_all_zero;
-        if is_all_zero(&oprf_seed) {
+        let oprf_seed = Zeroizing::new(oprf_seed);
+        if is_all_zero(&*oprf_seed) {
             return Err(OpaqueError::InvalidInput);
         }
-        Ok(Self { oprf_seed })
+        Ok(Self {
+            oprf_seed: *oprf_seed,
+        })
     }
 }
 

@@ -4,7 +4,7 @@
 use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::traits::Identity;
 use opaque_core::crypto;
-use opaque_core::oprf;
+use opaque_core::oprf::{self, OprfEvaluator};
 use opaque_core::types::*;
 
 #[test]
@@ -170,4 +170,27 @@ fn finalize_rejects_identity_evaluated_element() {
     let identity = RistrettoPoint::identity().compress().to_bytes();
     let mut output = [0u8; HASH_LENGTH];
     assert!(oprf::finalize(input, &blind_scalar, &identity, &mut output).is_err());
+}
+
+#[test]
+fn in_memory_evaluator_rejects_zero_seed() {
+    assert!(oprf::InMemoryEvaluator::new([0u8; OPRF_SEED_LENGTH]).is_err());
+}
+
+#[test]
+fn in_memory_evaluator_with_supplied_seed_evaluates_oprf() {
+    let evaluator = oprf::InMemoryEvaluator::new([0x42u8; OPRF_SEED_LENGTH]).unwrap();
+    let mut blinded = [0u8; PUBLIC_KEY_LENGTH];
+    let mut blind_scalar = [0u8; PRIVATE_KEY_LENGTH];
+    oprf::blind(
+        b"correct horse battery staple",
+        &mut blinded,
+        &mut blind_scalar,
+    )
+    .unwrap();
+
+    let evaluated = evaluator
+        .evaluate_oprf(&blinded, b"alice@example.com")
+        .unwrap();
+    crypto::validate_ristretto_point(&evaluated).unwrap();
 }

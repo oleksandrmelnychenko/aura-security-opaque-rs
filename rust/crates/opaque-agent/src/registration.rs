@@ -120,6 +120,7 @@ pub fn finalize_registration(
     state.secure_key.zeroize();
     state.secure_key_len = 0;
     state.oblivious_prf_blind_scalar.zeroize();
+    state.initiator_private_key.zeroize();
 
     state.phase = InitiatorPhase::RegistrationFinalized;
     Ok(())
@@ -128,8 +129,11 @@ pub fn finalize_registration(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opaque_core::types::{is_all_zero, REGISTRATION_RESPONSE_WIRE_LENGTH};
-    use opaque_relay::OpaqueResponder;
+    use opaque_core::protocol;
+    use opaque_core::types::{
+        is_all_zero, REGISTRATION_REQUEST_WIRE_LENGTH, REGISTRATION_RESPONSE_WIRE_LENGTH,
+    };
+    use opaque_relay::{create_registration_response, OpaqueResponder, RegistrationResponse};
 
     #[test]
     fn expired_registration_state_is_zeroized() {
@@ -156,5 +160,47 @@ mod tests {
         assert_eq!(state.secure_key_len, 0);
         assert!(is_all_zero(&state.initiator_private_key));
         assert!(is_all_zero(&state.oblivious_prf_blind_scalar));
+    }
+
+    #[test]
+    fn finalized_registration_zeroizes_registration_private_key() {
+        let responder = OpaqueResponder::generate().unwrap();
+        let initiator = OpaqueInitiator::new(responder.public_key()).unwrap();
+
+        let mut state = InitiatorState::new();
+        let mut request = RegistrationRequest::new();
+        create_registration_request(b"correct horse battery staple", &mut request, &mut state)
+            .unwrap();
+        assert!(!is_all_zero(&state.initiator_private_key));
+
+        let mut request_wire = vec![0u8; REGISTRATION_REQUEST_WIRE_LENGTH];
+        protocol::write_registration_request(&request.data, &mut request_wire).unwrap();
+
+        let mut response = RegistrationResponse::new();
+        create_registration_response(
+            &responder,
+            &request_wire,
+            b"alice@example.com",
+            &mut response,
+        )
+        .unwrap();
+
+        let mut response_wire = vec![0u8; REGISTRATION_RESPONSE_WIRE_LENGTH];
+        protocol::write_registration_response(
+            &response.data[..PUBLIC_KEY_LENGTH],
+            &response.data[PUBLIC_KEY_LENGTH..],
+            &mut response_wire,
+        )
+        .unwrap();
+
+        let mut record = RegistrationRecord::new();
+        finalize_registration(&initiator, &response_wire, &mut state, &mut record).unwrap();
+
+        assert_eq!(state.phase, InitiatorPhase::RegistrationFinalized);
+        assert!(is_all_zero(&state.initiator_private_key));
+        assert!(is_all_zero(&state.secure_key));
+        assert_eq!(state.secure_key_len, 0);
+        assert!(is_all_zero(&state.oblivious_prf_blind_scalar));
+        assert!(!is_all_zero(&record.initiator_public_key));
     }
 }
