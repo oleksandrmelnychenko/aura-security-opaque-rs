@@ -159,7 +159,8 @@ pub fn hmac_sha512(key: &[u8], message: &[u8], mac_out: &mut [u8; MAC_LENGTH]) -
         return Err(OpaqueError::InvalidInput);
     }
     type HmacSha512 = Hmac<Sha512>;
-    let mut mac = <HmacSha512 as Mac>::new_from_slice(key).map_err(|_| OpaqueError::CryptoError)?;
+    let mut mac =
+        <HmacSha512 as hmac::KeyInit>::new_from_slice(key).map_err(|_| OpaqueError::CryptoError)?;
     mac.update(message);
     let result = mac.finalize();
     mac_out.copy_from_slice(&result.into_bytes());
@@ -211,8 +212,8 @@ pub fn key_derivation_expand(prk: &[u8], info: &[u8], okm: &mut [u8]) -> OpaqueR
 
     let result = (|| {
         for i in 1..=n {
-            let mut mac =
-                <HmacSha512 as Mac>::new_from_slice(prk).map_err(|_| OpaqueError::CryptoError)?;
+            let mut mac = <HmacSha512 as hmac::KeyInit>::new_from_slice(prk)
+                .map_err(|_| OpaqueError::CryptoError)?;
             if i > 1 {
                 mac.update(&t_prev);
             }
@@ -254,7 +255,7 @@ pub fn derive_oprf_key(
     let mut mac_out = [0u8; MAC_LENGTH];
 
     for counter in 0u8..=255 {
-        let mut mac = <HmacSha512 as Mac>::new_from_slice(&oprf_seed)
+        let mut mac = <HmacSha512 as hmac::KeyInit>::new_from_slice(&oprf_seed)
             .map_err(|_| OpaqueError::CryptoError)?;
         mac.update(labels::OPRF_KEY_INFO);
         mac.update(account_id);
