@@ -326,3 +326,52 @@ fn hash_to_group_produces_valid_point() {
     crypto::hash_to_group(input, &mut point).unwrap();
     crypto::validate_ristretto_point(&point).unwrap();
 }
+
+#[test]
+fn credential_envelope_mask_roundtrip_is_context_bound() {
+    let randomized_pwd = [0x11u8; HASH_LENGTH];
+    let mut masking_key = [0u8; MASKING_KEY_LENGTH];
+    crypto::derive_masking_key(&randomized_pwd, &mut masking_key).unwrap();
+    let nonce = [0x22u8; NONCE_LENGTH];
+    let evaluated = [0x33u8; PUBLIC_KEY_LENGTH];
+    let account_context = [0x44u8; HASH_LENGTH];
+    let envelope = [0x55u8; ENVELOPE_LENGTH];
+
+    let mut masked = [0u8; ENVELOPE_LENGTH];
+    crypto::mask_credential_envelope(
+        &masking_key,
+        &nonce,
+        &evaluated,
+        &account_context,
+        &envelope,
+        &mut masked,
+    )
+    .unwrap();
+    assert_ne!(masked, envelope);
+
+    let mut recovered = [0u8; ENVELOPE_LENGTH];
+    crypto::mask_credential_envelope(
+        &masking_key,
+        &nonce,
+        &evaluated,
+        &account_context,
+        &masked,
+        &mut recovered,
+    )
+    .unwrap();
+    assert_eq!(recovered, envelope);
+
+    let mut other_context = account_context;
+    other_context[0] ^= 1;
+    let mut differently_masked = [0u8; ENVELOPE_LENGTH];
+    crypto::mask_credential_envelope(
+        &masking_key,
+        &nonce,
+        &evaluated,
+        &other_context,
+        &envelope,
+        &mut differently_masked,
+    )
+    .unwrap();
+    assert_ne!(differently_masked, masked);
+}

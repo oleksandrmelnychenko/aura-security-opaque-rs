@@ -80,8 +80,8 @@ OPAQUE_API OpaqueErrorCode opaque_agent_finish(
     OpaqueAgentStateHandle* state_handle,
     uint8_t*                session_key_out,
     size_t                  session_key_length,
-    uint8_t*                master_key_out,
-    size_t                  master_key_length);
+    uint8_t*                export_key_out,
+    size_t                  export_key_length);
 
 /* ── Wire-size queries ───────────────────────────────────────────────────── */
 

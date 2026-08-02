@@ -7,8 +7,8 @@ use std::time::Instant;
 use std::time::Duration;
 
 use opaque_core::types::{
-    pq, OpaqueResult, ENVELOPE_LENGTH, HASH_LENGTH, MAC_LENGTH, MASTER_KEY_LENGTH,
-    MAX_SECURE_KEY_LENGTH, NONCE_LENGTH, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH,
+    pq, OpaqueResult, EXPORT_KEY_LENGTH, HASH_LENGTH, MAC_LENGTH, MAX_SECURE_KEY_LENGTH,
+    NONCE_LENGTH, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH, REGISTRATION_CREDENTIAL_LENGTH,
     REGISTRATION_REQUEST_LENGTH, STATE_MAX_LIFETIME_SECS,
 };
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -58,7 +58,7 @@ pub struct InitiatorState {
 
     pub(crate) account_context_hash: [u8; HASH_LENGTH],
 
-    pub(crate) master_key: [u8; MASTER_KEY_LENGTH],
+    pub(crate) export_key: [u8; EXPORT_KEY_LENGTH],
 
     pub(crate) pq_ephemeral_public_key: [u8; pq::KEM_PUBLIC_KEY_LENGTH],
 
@@ -143,7 +143,7 @@ impl InitiatorState {
             oblivious_prf_blind_scalar: [0u8; PRIVATE_KEY_LENGTH],
             initiator_nonce: [0u8; NONCE_LENGTH],
             account_context_hash: [0u8; HASH_LENGTH],
-            master_key: [0u8; MASTER_KEY_LENGTH],
+            export_key: [0u8; EXPORT_KEY_LENGTH],
             pq_ephemeral_public_key: [0u8; pq::KEM_PUBLIC_KEY_LENGTH],
             pq_ephemeral_secret_key: [0u8; pq::KEM_SECRET_KEY_LENGTH],
             pq_shared_secret: [0u8; pq::KEM_SHARED_SECRET_LENGTH],
@@ -178,6 +178,7 @@ impl Default for RegistrationRequest {
 
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct RegistrationRecord {
+    /// Serialized masking key followed by the encrypted envelope.
     pub envelope: Vec<u8>,
 
     pub initiator_public_key: [u8; PUBLIC_KEY_LENGTH],
@@ -186,7 +187,7 @@ pub struct RegistrationRecord {
 impl RegistrationRecord {
     pub fn new() -> Self {
         Self {
-            envelope: vec![0u8; ENVELOPE_LENGTH],
+            envelope: vec![0u8; REGISTRATION_CREDENTIAL_LENGTH],
             initiator_public_key: [0u8; PUBLIC_KEY_LENGTH],
         }
     }

@@ -7,6 +7,8 @@ use opaque_core::oprf;
 use opaque_core::pq_kem;
 use opaque_core::types::*;
 
+const BENCH_ADDITIONAL_KEY_INFO: &[u8] = b"benchmark/additional-key";
+
 fn bench_ke1(c: &mut Criterion) {
     let input = b"benchmark password";
     let mut group = c.benchmark_group("pq_overhead/ke1");
@@ -68,7 +70,7 @@ fn bench_ke2_no_ksf(c: &mut Criterion) {
         let mut dh4 = [0u8; PUBLIC_KEY_LENGTH];
         let mut prk = [0u8; HASH_LENGTH];
         let mut session_key = [0u8; HASH_LENGTH];
-        let mut master_key = [0u8; MASTER_KEY_LENGTH];
+        let mut master_key = [0u8; EXPORT_KEY_LENGTH];
         let mut resp_mac_key = [0u8; MAC_LENGTH];
         let mut init_mac_key = [0u8; MAC_LENGTH];
         let mut resp_mac = [0u8; MAC_LENGTH];
@@ -87,7 +89,8 @@ fn bench_ke2_no_ksf(c: &mut Criterion) {
             crypto::key_derivation_extract(labels::HKDF_SALT, &ikm, &mut prk).unwrap();
             crypto::key_derivation_expand(&prk, labels::SESSION_KEY_INFO, &mut session_key)
                 .unwrap();
-            crypto::key_derivation_expand(&prk, labels::MASTER_KEY_INFO, &mut master_key).unwrap();
+            crypto::key_derivation_expand(&prk, BENCH_ADDITIONAL_KEY_INFO, &mut master_key)
+                .unwrap();
             crypto::key_derivation_expand(&prk, labels::RESPONDER_MAC_INFO, &mut resp_mac_key)
                 .unwrap();
             crypto::key_derivation_expand(&prk, labels::INITIATOR_MAC_INFO, &mut init_mac_key)
@@ -107,7 +110,7 @@ fn bench_ke2_no_ksf(c: &mut Criterion) {
         let mut kem_ss = [0u8; pq::KEM_SHARED_SECRET_LENGTH];
         let mut prk = [0u8; HASH_LENGTH];
         let mut session_key = [0u8; HASH_LENGTH];
-        let mut master_key = [0u8; MASTER_KEY_LENGTH];
+        let mut master_key = [0u8; EXPORT_KEY_LENGTH];
         let mut resp_mac_key = [0u8; MAC_LENGTH];
         let mut init_mac_key = [0u8; MAC_LENGTH];
         let mut resp_mac = [0u8; MAC_LENGTH];
@@ -127,7 +130,7 @@ fn bench_ke2_no_ksf(c: &mut Criterion) {
             pq_kem::combine_key_material(&ikm, &kem_ss, &transcript_hash, &mut prk).unwrap();
             crypto::key_derivation_expand(&prk, pq_labels::PQ_SESSION_KEY_INFO, &mut session_key)
                 .unwrap();
-            crypto::key_derivation_expand(&prk, pq_labels::PQ_MASTER_KEY_INFO, &mut master_key)
+            crypto::key_derivation_expand(&prk, BENCH_ADDITIONAL_KEY_INFO, &mut master_key)
                 .unwrap();
             crypto::key_derivation_expand(
                 &prk,
@@ -189,7 +192,7 @@ fn bench_ke3_no_ksf(c: &mut Criterion) {
         let mut dh4 = [0u8; PUBLIC_KEY_LENGTH];
         let mut prk = [0u8; HASH_LENGTH];
         let mut session_key = [0u8; HASH_LENGTH];
-        let mut master_key = [0u8; MASTER_KEY_LENGTH];
+        let mut master_key = [0u8; EXPORT_KEY_LENGTH];
         let mut resp_mac_key = [0u8; MAC_LENGTH];
         let mut init_mac_key = [0u8; MAC_LENGTH];
         let mut init_mac = [0u8; MAC_LENGTH];
@@ -207,7 +210,8 @@ fn bench_ke3_no_ksf(c: &mut Criterion) {
             crypto::key_derivation_extract(labels::HKDF_SALT, &ikm, &mut prk).unwrap();
             crypto::key_derivation_expand(&prk, labels::SESSION_KEY_INFO, &mut session_key)
                 .unwrap();
-            crypto::key_derivation_expand(&prk, labels::MASTER_KEY_INFO, &mut master_key).unwrap();
+            crypto::key_derivation_expand(&prk, BENCH_ADDITIONAL_KEY_INFO, &mut master_key)
+                .unwrap();
             crypto::key_derivation_expand(&prk, labels::RESPONDER_MAC_INFO, &mut resp_mac_key)
                 .unwrap();
             crypto::key_derivation_expand(&prk, labels::INITIATOR_MAC_INFO, &mut init_mac_key)
@@ -226,7 +230,7 @@ fn bench_ke3_no_ksf(c: &mut Criterion) {
         let mut kem_ss_dec = [0u8; pq::KEM_SHARED_SECRET_LENGTH];
         let mut prk = [0u8; HASH_LENGTH];
         let mut session_key = [0u8; HASH_LENGTH];
-        let mut master_key = [0u8; MASTER_KEY_LENGTH];
+        let mut master_key = [0u8; EXPORT_KEY_LENGTH];
         let mut resp_mac_key = [0u8; MAC_LENGTH];
         let mut init_mac_key = [0u8; MAC_LENGTH];
         let mut init_mac = [0u8; MAC_LENGTH];
@@ -245,7 +249,7 @@ fn bench_ke3_no_ksf(c: &mut Criterion) {
             pq_kem::combine_key_material(&ikm, &kem_ss_dec, &transcript_hash, &mut prk).unwrap();
             crypto::key_derivation_expand(&prk, pq_labels::PQ_SESSION_KEY_INFO, &mut session_key)
                 .unwrap();
-            crypto::key_derivation_expand(&prk, pq_labels::PQ_MASTER_KEY_INFO, &mut master_key)
+            crypto::key_derivation_expand(&prk, BENCH_ADDITIONAL_KEY_INFO, &mut master_key)
                 .unwrap();
             crypto::key_derivation_expand(
                 &prk,
@@ -308,14 +312,15 @@ fn bench_full_ake_no_ksf(c: &mut Criterion) {
             let mut prk = [0u8; HASH_LENGTH];
             crypto::key_derivation_extract(labels::HKDF_SALT, &ikm, &mut prk).unwrap();
             let mut session_key = [0u8; HASH_LENGTH];
-            let mut master_key = [0u8; MASTER_KEY_LENGTH];
+            let mut master_key = [0u8; EXPORT_KEY_LENGTH];
             let mut resp_mac_key = [0u8; MAC_LENGTH];
             let mut init_mac_key = [0u8; MAC_LENGTH];
             let mut resp_mac = [0u8; MAC_LENGTH];
             let mut init_mac_r = [0u8; MAC_LENGTH];
             crypto::key_derivation_expand(&prk, labels::SESSION_KEY_INFO, &mut session_key)
                 .unwrap();
-            crypto::key_derivation_expand(&prk, labels::MASTER_KEY_INFO, &mut master_key).unwrap();
+            crypto::key_derivation_expand(&prk, BENCH_ADDITIONAL_KEY_INFO, &mut master_key)
+                .unwrap();
             crypto::key_derivation_expand(&prk, labels::RESPONDER_MAC_INFO, &mut resp_mac_key)
                 .unwrap();
             crypto::key_derivation_expand(&prk, labels::INITIATOR_MAC_INFO, &mut init_mac_key)
@@ -345,7 +350,8 @@ fn bench_full_ake_no_ksf(c: &mut Criterion) {
             let mut init_mac2 = [0u8; MAC_LENGTH];
             crypto::key_derivation_expand(&prk2, labels::SESSION_KEY_INFO, &mut session_key)
                 .unwrap();
-            crypto::key_derivation_expand(&prk2, labels::MASTER_KEY_INFO, &mut master_key).unwrap();
+            crypto::key_derivation_expand(&prk2, BENCH_ADDITIONAL_KEY_INFO, &mut master_key)
+                .unwrap();
             crypto::key_derivation_expand(&prk2, labels::RESPONDER_MAC_INFO, &mut resp_mac_key2)
                 .unwrap();
             crypto::key_derivation_expand(&prk2, labels::INITIATOR_MAC_INFO, &mut init_mac_key2)
@@ -389,14 +395,14 @@ fn bench_full_ake_no_ksf(c: &mut Criterion) {
             let mut prk = [0u8; HASH_LENGTH];
             pq_kem::combine_key_material(&ikm, &kem_ss, &transcript_hash, &mut prk).unwrap();
             let mut session_key = [0u8; HASH_LENGTH];
-            let mut master_key = [0u8; MASTER_KEY_LENGTH];
+            let mut master_key = [0u8; EXPORT_KEY_LENGTH];
             let mut resp_mac_key = [0u8; MAC_LENGTH];
             let mut init_mac_key = [0u8; MAC_LENGTH];
             let mut resp_mac = [0u8; MAC_LENGTH];
             let mut init_mac_r = [0u8; MAC_LENGTH];
             crypto::key_derivation_expand(&prk, pq_labels::PQ_SESSION_KEY_INFO, &mut session_key)
                 .unwrap();
-            crypto::key_derivation_expand(&prk, pq_labels::PQ_MASTER_KEY_INFO, &mut master_key)
+            crypto::key_derivation_expand(&prk, BENCH_ADDITIONAL_KEY_INFO, &mut master_key)
                 .unwrap();
             crypto::key_derivation_expand(
                 &prk,
@@ -437,7 +443,7 @@ fn bench_full_ake_no_ksf(c: &mut Criterion) {
             let mut init_mac2 = [0u8; MAC_LENGTH];
             crypto::key_derivation_expand(&prk2, pq_labels::PQ_SESSION_KEY_INFO, &mut session_key)
                 .unwrap();
-            crypto::key_derivation_expand(&prk2, pq_labels::PQ_MASTER_KEY_INFO, &mut master_key)
+            crypto::key_derivation_expand(&prk2, BENCH_ADDITIONAL_KEY_INFO, &mut master_key)
                 .unwrap();
             crypto::key_derivation_expand(
                 &prk2,

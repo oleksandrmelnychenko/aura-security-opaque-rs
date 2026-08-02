@@ -10,9 +10,8 @@ use proptest::prelude::*;
 type AuthResult = Result<
     (
         [u8; HASH_LENGTH],
-        [u8; MASTER_KEY_LENGTH],
+        [u8; EXPORT_KEY_LENGTH],
         [u8; HASH_LENGTH],
-        [u8; MASTER_KEY_LENGTH],
     ),
     Box<dyn std::error::Error>,
 >;
@@ -99,28 +98,17 @@ fn authenticate(password: &[u8], responder: &OpaqueResponder, record_bytes: &[u8
     protocol::write_ke3(&ke3.initiator_mac, &mut ke3_bytes)?;
 
     let mut server_session_key = [0u8; HASH_LENGTH];
-    let mut server_master_key = [0u8; MASTER_KEY_LENGTH];
-    responder_finish(
-        &ke3_bytes,
-        &mut server_state,
-        &mut server_session_key,
-        &mut server_master_key,
-    )?;
+    responder_finish(&ke3_bytes, &mut server_state, &mut server_session_key)?;
 
     let mut client_session_key = [0u8; HASH_LENGTH];
-    let mut client_master_key = [0u8; MASTER_KEY_LENGTH];
+    let mut client_master_key = [0u8; EXPORT_KEY_LENGTH];
     initiator_finish(
         &mut client_state,
         &mut client_session_key,
         &mut client_master_key,
     )?;
 
-    Ok((
-        client_session_key,
-        client_master_key,
-        server_session_key,
-        server_master_key,
-    ))
+    Ok((client_session_key, client_master_key, server_session_key))
 }
 
 fn try_generate_ke3(
@@ -229,13 +217,7 @@ fn try_responder_finish(
     tamper_ke3(&mut ke3_bytes);
 
     let mut server_session_key = [0u8; HASH_LENGTH];
-    let mut server_master_key = [0u8; MASTER_KEY_LENGTH];
-    responder_finish(
-        &ke3_bytes,
-        &mut server_state,
-        &mut server_session_key,
-        &mut server_master_key,
-    )?;
+    responder_finish(&ke3_bytes, &mut server_state, &mut server_session_key)?;
     Ok(())
 }
 
@@ -246,11 +228,11 @@ proptest! {
     fn prop_session_keys_always_match(password in prop::collection::vec(1u8..=255, 1..=128)) {
         let responder = OpaqueResponder::generate().unwrap();
         let record = register(&password, &responder);
-        let (c_sk, c_mk, s_sk, s_mk) = authenticate(&password, &responder, &record).unwrap();
+        let (c_sk, export_key, s_sk) = authenticate(&password, &responder, &record).unwrap();
         prop_assert_eq!(&c_sk, &s_sk, "session keys must match");
-        prop_assert_eq!(&c_mk, &s_mk, "master keys must match");
         prop_assert!(c_sk.len() == HASH_LENGTH);
         prop_assert!(!c_sk.iter().all(|&b| b == 0));
+        prop_assert!(!export_key.iter().all(|&b| b == 0));
     }
 
     #[test]
@@ -269,8 +251,8 @@ proptest! {
     fn prop_different_sessions_different_keys(password in prop::collection::vec(1u8..=255, 1..=64)) {
         let responder = OpaqueResponder::generate().unwrap();
         let record = register(&password, &responder);
-        let (sk1, _, _, _) = authenticate(&password, &responder, &record).unwrap();
-        let (sk2, _, _, _) = authenticate(&password, &responder, &record).unwrap();
+        let (sk1, _, _) = authenticate(&password, &responder, &record).unwrap();
+        let (sk2, _, _) = authenticate(&password, &responder, &record).unwrap();
         prop_assert_ne!(sk1, sk2, "different sessions must produce different session keys");
     }
 

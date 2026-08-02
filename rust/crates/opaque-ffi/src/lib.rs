@@ -16,12 +16,12 @@
 //! | `OPRF_SEED_LENGTH`             |    32 |
 //! | `REGISTRATION_REQUEST_WIRE_LENGTH`  |    33 |
 //! | `REGISTRATION_RESPONSE_WIRE_LENGTH` |    65 |
-//! | `REGISTRATION_RECORD_LENGTH`   |   169 |
+//! | `REGISTRATION_RECORD_LENGTH`   |   201 |
 //! | `KE1_LENGTH`                   |  1273 |
 //! | `KE2_LENGTH`                   |  1377 |
 //! | `KE3_LENGTH`                   |    65 |
 //! | `HASH_LENGTH` (session key)    |    64 |
-//! | `MASTER_KEY_LENGTH`            |    32 |
+//! | `EXPORT_KEY_LENGTH`            |    32 |
 //!
 //! ## Return codes
 //!

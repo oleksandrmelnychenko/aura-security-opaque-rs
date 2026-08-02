@@ -49,8 +49,6 @@ unsafe extern "C" {
         state_handle: *mut c_void,
         session_key: *mut u8,
         session_key_buffer_size: usize,
-        master_key_out: *mut u8,
-        master_key_buffer_size: usize,
     ) -> i32;
 
     fn opaque_agent_create(
@@ -100,20 +98,20 @@ unsafe extern "C" {
         state_handle: *mut c_void,
         session_key_out: *mut u8,
         session_key_length: usize,
-        master_key_out: *mut u8,
-        master_key_length: usize,
+        export_key_out: *mut u8,
+        export_key_length: usize,
     ) -> i32;
 }
 
 const PUBLIC_KEY_LENGTH: usize = 32;
 const REGISTRATION_REQUEST_LENGTH: usize = 33;
 const REGISTRATION_RESPONSE_LENGTH: usize = 65;
-const REGISTRATION_RECORD_LENGTH: usize = 169;
+const REGISTRATION_RECORD_LENGTH: usize = 201;
 const KE1_LENGTH: usize = 1273;
 const KE2_LENGTH: usize = 1377;
 const KE3_LENGTH: usize = 65;
 const SESSION_KEY_LENGTH: usize = 64;
-const MASTER_KEY_LENGTH: usize = 32;
+const EXPORT_KEY_LENGTH: usize = 32;
 
 #[test]
 fn ffi_agent_and_relay_roundtrip() {
@@ -255,7 +253,6 @@ fn ffi_agent_and_relay_roundtrip() {
         );
 
         let mut relay_session_key = [0u8; SESSION_KEY_LENGTH];
-        let mut relay_master_key = [0u8; MASTER_KEY_LENGTH];
         assert_eq!(
             opaque_relay_finish(
                 relay,
@@ -264,28 +261,26 @@ fn ffi_agent_and_relay_roundtrip() {
                 relay_state,
                 relay_session_key.as_mut_ptr(),
                 relay_session_key.len(),
-                relay_master_key.as_mut_ptr(),
-                relay_master_key.len(),
             ),
             0
         );
 
         let mut agent_session_key = [0u8; SESSION_KEY_LENGTH];
-        let mut agent_master_key = [0u8; MASTER_KEY_LENGTH];
+        let mut agent_export_key = [0u8; EXPORT_KEY_LENGTH];
         assert_eq!(
             opaque_agent_finish(
                 agent,
                 agent_state,
                 agent_session_key.as_mut_ptr(),
                 agent_session_key.len(),
-                agent_master_key.as_mut_ptr(),
-                agent_master_key.len(),
+                agent_export_key.as_mut_ptr(),
+                agent_export_key.len(),
             ),
             0
         );
 
         assert_eq!(agent_session_key, relay_session_key);
-        assert_eq!(agent_master_key, relay_master_key);
+        assert!(!agent_export_key.iter().all(|byte| *byte == 0));
 
         opaque_agent_state_destroy(&mut agent_state);
         opaque_relay_state_destroy(&mut relay_state);

@@ -9,8 +9,8 @@ use std::time::Duration;
 use opaque_core::oprf::{InMemoryEvaluator, OprfEvaluator};
 use opaque_core::types::{
     constant_time_eq, pq, OpaqueError, OpaqueResult, CREDENTIAL_RESPONSE_LENGTH, ENVELOPE_LENGTH,
-    HASH_LENGTH, MAC_LENGTH, MASTER_KEY_LENGTH, NONCE_LENGTH, OPRF_SEED_LENGTH, PRIVATE_KEY_LENGTH,
-    PUBLIC_KEY_LENGTH, REGISTRATION_RESPONSE_LENGTH, STATE_MAX_LIFETIME_SECS,
+    HASH_LENGTH, MAC_LENGTH, MASKING_KEY_LENGTH, NONCE_LENGTH, OPRF_SEED_LENGTH,
+    PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH, REGISTRATION_RESPONSE_LENGTH, STATE_MAX_LIFETIME_SECS,
 };
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
@@ -44,8 +44,6 @@ pub struct ResponderState {
     pub(crate) session_key: [u8; HASH_LENGTH],
 
     pub(crate) expected_initiator_mac: [u8; MAC_LENGTH],
-
-    pub(crate) master_key: [u8; MASTER_KEY_LENGTH],
 
     #[zeroize(skip)]
     pub handshake_complete: bool,
@@ -116,7 +114,6 @@ impl ResponderState {
             initiator_public_key: [0u8; PUBLIC_KEY_LENGTH],
             session_key: [0u8; HASH_LENGTH],
             expected_initiator_mac: [0u8; MAC_LENGTH],
-            master_key: [0u8; MASTER_KEY_LENGTH],
             handshake_complete: false,
             pq_shared_secret: [0u8; pq::KEM_SHARED_SECRET_LENGTH],
         }
@@ -224,6 +221,8 @@ impl Default for Ke2Message {
 pub struct ResponderCredentials {
     pub envelope: Vec<u8>,
 
+    pub masking_key: [u8; MASKING_KEY_LENGTH],
+
     pub initiator_public_key: [u8; PUBLIC_KEY_LENGTH],
 
     #[zeroize(skip)]
@@ -234,6 +233,7 @@ impl ResponderCredentials {
     pub fn new() -> Self {
         Self {
             envelope: vec![0u8; ENVELOPE_LENGTH],
+            masking_key: [0u8; MASKING_KEY_LENGTH],
             initiator_public_key: [0u8; PUBLIC_KEY_LENGTH],
             registered: false,
         }

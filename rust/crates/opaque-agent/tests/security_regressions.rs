@@ -7,7 +7,7 @@ use opaque_agent::{
 };
 use opaque_core::types::{
     Envelope, OpaqueError, HASH_LENGTH, KE1_LENGTH, KE2_LENGTH, KE3_LENGTH, MAC_LENGTH,
-    MASTER_KEY_LENGTH, NONCE_LENGTH, OPRF_SEED_LENGTH, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH,
+    NONCE_LENGTH, OPRF_SEED_LENGTH, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH,
     REGISTRATION_RECORD_LENGTH, REGISTRATION_REQUEST_WIRE_LENGTH,
     REGISTRATION_RESPONSE_WIRE_LENGTH, SECRETBOX_MAC_LENGTH,
 };
@@ -280,23 +280,12 @@ fn regression_ke3_retry_after_failed_verification_is_rejected() {
     tampered_ke3[1] ^= 0xFF;
 
     let mut session_key = [0u8; HASH_LENGTH];
-    let mut master_key = [0u8; MASTER_KEY_LENGTH];
     assert_eq!(
-        responder_finish(
-            &tampered_ke3,
-            &mut server_state,
-            &mut session_key,
-            &mut master_key
-        ),
+        responder_finish(&tampered_ke3, &mut server_state, &mut session_key),
         Err(OpaqueError::AuthenticationError)
     );
     assert_eq!(
-        responder_finish(
-            &[0u8; KE3_LENGTH],
-            &mut server_state,
-            &mut session_key,
-            &mut master_key
-        ),
+        responder_finish(&[0u8; KE3_LENGTH], &mut server_state, &mut session_key),
         Err(OpaqueError::ValidationError)
     );
 }
@@ -327,24 +316,13 @@ fn regression_unknown_user_fake_credentials_fail_closed_on_both_sides() {
     let mut zero_ke3 = [0u8; KE3_LENGTH];
     protocol::write_ke3(&zero_mac, &mut zero_ke3).unwrap();
     let mut session_key = [0u8; HASH_LENGTH];
-    let mut master_key = [0u8; MASTER_KEY_LENGTH];
     assert_eq!(
-        responder_finish(
-            &zero_ke3,
-            &mut server_state,
-            &mut session_key,
-            &mut master_key
-        ),
+        responder_finish(&zero_ke3, &mut server_state, &mut session_key),
         Err(OpaqueError::AuthenticationError)
     );
     assert_eq!(server_state.phase, ResponderPhase::Finished);
     assert_eq!(
-        responder_finish(
-            &zero_ke3,
-            &mut server_state,
-            &mut session_key,
-            &mut master_key
-        ),
+        responder_finish(&zero_ke3, &mut server_state, &mut session_key),
         Err(OpaqueError::ValidationError)
     );
 }

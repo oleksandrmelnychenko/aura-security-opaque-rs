@@ -43,6 +43,7 @@ pub fn build_credentials(
     crypto::validate_public_key(view.initiator_public_key)?;
 
     credentials.envelope = view.envelope.to_vec();
+    credentials.masking_key.copy_from_slice(view.masking_key);
     credentials
         .initiator_public_key
         .copy_from_slice(view.initiator_public_key);

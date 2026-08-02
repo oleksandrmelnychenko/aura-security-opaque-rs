@@ -4,12 +4,12 @@
 use opaque_core::types::{
     constant_time_eq, ct_select_bytes, labels, pq, pq_labels, OpaqueError, OpaqueResult,
     CLASSICAL_IKM_LENGTH, CREDENTIAL_RESPONSE_LENGTH, DH_COMPONENT_COUNT, ENVELOPE_LENGTH,
-    HASH_LENGTH, KE1_LENGTH, KE3_LENGTH, MAC_LENGTH, MASTER_KEY_LENGTH, NONCE_LENGTH,
+    HASH_LENGTH, KE1_LENGTH, KE3_LENGTH, MAC_LENGTH, MASKING_KEY_LENGTH, NONCE_LENGTH,
     PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH,
 };
 use opaque_core::{crypto, pq_kem, protocol};
 use subtle::Choice;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::state::{
     Ke2Message, OpaqueResponder, ResponderCredentials, ResponderPhase, ResponderState,
@@ -26,7 +26,11 @@ fn select_credentials(
     responder: &OpaqueResponder,
     account_id: &[u8],
     credentials: &ResponderCredentials,
-) -> OpaqueResult<([u8; PUBLIC_KEY_LENGTH], [u8; ENVELOPE_LENGTH])> {
+) -> OpaqueResult<(
+    [u8; PUBLIC_KEY_LENGTH],
+    [u8; ENVELOPE_LENGTH],
+    [u8; MASKING_KEY_LENGTH],
+)> {
     let mut fake_material = responder.evaluator().derive_fake_material(account_id)?;
     let mut fake_private_key = [0u8; PRIVATE_KEY_LENGTH];
     let mut fake_public_key = [0u8; PUBLIC_KEY_LENGTH];
@@ -38,15 +42,21 @@ fn select_credentials(
         labels::FAKE_CREDENTIALS_CONTEXT,
         &mut fake_envelope,
     )?;
+    let mut fake_masking_key = [0u8; MASKING_KEY_LENGTH];
+    crypto::derive_masking_key(&fake_material, &mut fake_masking_key)?;
     fake_material.zeroize();
     fake_private_key.zeroize();
 
     let mut real_public_key = [0u8; PUBLIC_KEY_LENGTH];
     let mut real_envelope = [0u8; ENVELOPE_LENGTH];
+    let mut real_masking_key = [0u8; MASKING_KEY_LENGTH];
     if credentials.registered {
-        if credentials.envelope.len() != ENVELOPE_LENGTH {
+        if credentials.envelope.len() != ENVELOPE_LENGTH
+            || opaque_core::types::is_all_zero(&credentials.masking_key)
+        {
             fake_public_key.zeroize();
             fake_envelope.zeroize();
+            fake_masking_key.zeroize();
             return Err(OpaqueError::ValidationError);
         }
 
@@ -58,15 +68,23 @@ fn select_credentials(
             .map_err(|_| OpaqueError::ValidationError)?;
         real_public_key.copy_from_slice(&credentials.initiator_public_key);
         real_envelope.copy_from_slice(envelope);
+        real_masking_key.copy_from_slice(&credentials.masking_key);
     }
 
     let choice = Choice::from(u8::from(credentials.registered));
     let mut selected_public_key = [0u8; PUBLIC_KEY_LENGTH];
     let mut selected_envelope = [0u8; ENVELOPE_LENGTH];
+    let mut selected_masking_key = [0u8; MASKING_KEY_LENGTH];
     ct_select_bytes(
         &mut selected_public_key,
         &real_public_key,
         &fake_public_key,
+        choice,
+    );
+    ct_select_bytes(
+        &mut selected_masking_key,
+        &real_masking_key,
+        &fake_masking_key,
         choice,
     );
     ct_select_bytes(
@@ -78,10 +96,12 @@ fn select_credentials(
 
     fake_public_key.zeroize();
     fake_envelope.zeroize();
+    fake_masking_key.zeroize();
     real_public_key.zeroize();
     real_envelope.zeroize();
+    real_masking_key.zeroize();
 
-    Ok((selected_public_key, selected_envelope))
+    Ok((selected_public_key, selected_envelope, selected_masking_key))
 }
 
 pub fn generate_ke2(
@@ -113,7 +133,11 @@ pub fn generate_ke2(
         .initiator_public_key
         .try_into()
         .map_err(|_| OpaqueError::InvalidProtocolMessage)?;
-    let (selected_pk, selected_envelope) = select_credentials(responder, account_id, credentials)?;
+    let (selected_pk, selected_envelope, selected_masking_key) =
+        select_credentials(responder, account_id, credentials)?;
+    let mut selected_pk = Zeroizing::new(selected_pk);
+    let mut selected_envelope = Zeroizing::new(selected_envelope);
+    let mut selected_masking_key = Zeroizing::new(selected_masking_key);
     let mut account_context_hash = [0u8; HASH_LENGTH];
     crypto::sha512_multi(
         &[labels::ACCOUNT_CONTEXT_BINDING, account_id],
@@ -122,7 +146,7 @@ pub fn generate_ke2(
 
     crypto::validate_ristretto_point(ke1.credential_request)?;
     crypto::validate_public_key(init_eph_pk)?;
-    crypto::validate_public_key(&selected_pk)?;
+    crypto::validate_public_key(&*selected_pk)?;
 
     state.initiator_public_key = *init_eph_pk;
     state.responder_private_key = kp.private_key;
@@ -143,7 +167,16 @@ pub fn generate_ke2(
     let evaluated_elem = responder.evaluator().evaluate_oprf(cred_req, account_id)?;
 
     ke2.credential_response[..PUBLIC_KEY_LENGTH].copy_from_slice(&evaluated_elem);
-    ke2.credential_response[PUBLIC_KEY_LENGTH..].copy_from_slice(&selected_envelope);
+    let mut masked_envelope = Zeroizing::new([0u8; ENVELOPE_LENGTH]);
+    crypto::mask_credential_envelope(
+        &selected_masking_key,
+        &ke2.responder_nonce,
+        &evaluated_elem,
+        &account_context_hash,
+        &selected_envelope,
+        &mut masked_envelope,
+    )?;
+    ke2.credential_response[PUBLIC_KEY_LENGTH..].copy_from_slice(&*masked_envelope);
 
     let mut dh1 = [0u8; PUBLIC_KEY_LENGTH];
     let mut dh2 = [0u8; PUBLIC_KEY_LENGTH];
@@ -189,7 +222,7 @@ pub fn generate_ke2(
     append(&state.responder_ephemeral_public_key);
     append(ke1.initiator_nonce);
     append(&ke2.responder_nonce);
-    append(&selected_pk);
+    append(&*selected_pk);
     append(&kp.public_key);
     append(&ke2.credential_response);
     append(ke1.pq_ephemeral_public_key);
@@ -207,9 +240,6 @@ pub fn generate_ke2(
 
     state.session_key = [0u8; HASH_LENGTH];
     crypto::key_derivation_expand(&prk, pq_labels::PQ_SESSION_KEY_INFO, &mut state.session_key)?;
-
-    state.master_key = [0u8; MASTER_KEY_LENGTH];
-    crypto::key_derivation_expand(&prk, pq_labels::PQ_MASTER_KEY_INFO, &mut state.master_key)?;
 
     let mut resp_mac_key = [0u8; MAC_LENGTH];
     crypto::key_derivation_expand(&prk, pq_labels::PQ_RESPONDER_MAC_INFO, &mut resp_mac_key)?;
@@ -235,6 +265,10 @@ pub fn generate_ke2(
     init_mac_key.zeroize();
     transcript_hash.zeroize();
     account_context_hash.zeroize();
+    selected_pk.zeroize();
+    selected_envelope.zeroize();
+    selected_masking_key.zeroize();
+    masked_envelope.zeroize();
     state.refresh_deadline();
     state.phase = ResponderPhase::Ke2Generated;
     Ok(())
@@ -244,7 +278,6 @@ pub fn responder_finish(
     ke3_data: &[u8],
     state: &mut ResponderState,
     session_key: &mut [u8; HASH_LENGTH],
-    master_key: &mut [u8; MASTER_KEY_LENGTH],
 ) -> OpaqueResult<()> {
     if ke3_data.len() != KE3_LENGTH {
         return Err(OpaqueError::InvalidProtocolMessage);
@@ -264,7 +297,6 @@ pub fn responder_finish(
         Ok(ke3) => ke3,
         Err(e) => {
             state.session_key.zeroize();
-            state.master_key.zeroize();
             state.pq_shared_secret.zeroize();
             state.expected_initiator_mac.zeroize();
             state.responder_ephemeral_private_key.zeroize();
@@ -277,7 +309,6 @@ pub fn responder_finish(
 
     if !constant_time_eq(ke3.initiator_mac, &state.expected_initiator_mac) {
         state.session_key.zeroize();
-        state.master_key.zeroize();
         state.pq_shared_secret.zeroize();
         state.expected_initiator_mac.zeroize();
         state.responder_ephemeral_private_key.zeroize();
@@ -288,9 +319,7 @@ pub fn responder_finish(
     }
 
     session_key.copy_from_slice(&state.session_key);
-    master_key.copy_from_slice(&state.master_key);
     state.session_key.zeroize();
-    state.master_key.zeroize();
 
     state.pq_shared_secret.zeroize();
     state.expected_initiator_mac.zeroize();
@@ -405,8 +434,7 @@ mod tests {
 
         let ke3 = [0u8; KE3_LENGTH];
         let mut session_key = [0u8; HASH_LENGTH];
-        let mut master_key = [0u8; MASTER_KEY_LENGTH];
-        let result = responder_finish(&ke3, &mut state, &mut session_key, &mut master_key);
+        let result = responder_finish(&ke3, &mut state, &mut session_key);
         assert_eq!(result, Err(OpaqueError::ValidationError));
         assert_eq!(state.phase, ResponderPhase::Finished);
         assert!(!state.handshake_complete);
@@ -415,7 +443,6 @@ mod tests {
         assert!(is_all_zero(&state.expected_initiator_mac));
         assert!(is_all_zero(&state.pq_shared_secret));
         assert!(is_all_zero(&state.session_key));
-        assert!(is_all_zero(&state.master_key));
     }
 
     #[test]
@@ -520,8 +547,7 @@ mod tests {
         protocol::write_ke3(&ke3.initiator_mac, &mut ke3_bytes).unwrap();
 
         let mut session_key = [0u8; HASH_LENGTH];
-        let mut master_key = [0u8; MASTER_KEY_LENGTH];
-        responder_finish(&ke3_bytes, &mut state, &mut session_key, &mut master_key).unwrap();
+        responder_finish(&ke3_bytes, &mut state, &mut session_key).unwrap();
 
         assert!(state.handshake_complete);
         assert_eq!(state.phase, ResponderPhase::Finished);

@@ -25,7 +25,7 @@ Agent                         Relay
   |<-- KE2 (credential resp) --|
   |--- KE3 (confirmation) ---->|
   |                             |
-  [session key + master key]    [session key + master key]
+  [session key + export key]    [session key only]
 ```
 
 ## 2. Trust Boundaries
@@ -128,7 +128,7 @@ Agent                         Relay
 | **STRIDE** | Information Disclosure |
 | **Actor** | Active Network Adversary |
 | **Attack** | Measure response time differences between valid and invalid usernames to enumerate accounts. |
-| **Mitigation** | On unknown user, relay generates a fake credential using a deterministic seed and proceeds with the protocol using constant-time byte selection (`ct_select_bytes`). Response time is independent of whether the user exists. |
+| **Mitigation** | On unknown user, relay generates a fake credential using a deterministic seed and proceeds with the protocol using constant-time byte selection (`ct_select_bytes`). Real and fake envelopes are masked with the same response construction, so the wire response does not expose the stored credential record. Response time is independent of whether the user exists. |
 | **Verification** | Constant-time credential selection implemented and reviewed in security audit (18/18 findings resolved). |
 
 ## 5. Assets
@@ -137,7 +137,7 @@ Agent                         Relay
 |-------|------------|------------|
 | User password | Critical | Never leaves agent; OPRF-blinded before transmission |
 | Session key | Critical | Derived from hybrid KEM+DH; zeroized after use |
-| Master key | Critical | Derived during authentication; zeroized after extraction |
+| Client export key | Critical | Derived from the password-authenticated OPRF result; unavailable to the relay and zeroized after extraction |
 | Relay private key | Critical | Integrator-managed storage; zeroized in memory |
 | Registration record | High | Server-side storage; not password-equivalent on its own, but no longer protective if `oprf_seed` is also compromised |
 | Ephemeral keys | High | Per-session; zeroized immediately after protocol step |

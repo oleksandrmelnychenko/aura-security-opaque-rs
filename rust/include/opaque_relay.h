@@ -101,9 +101,7 @@ OPAQUE_API OpaqueErrorCode opaque_relay_finish(
     size_t                  ke3_length,
     OpaqueRelayStateHandle* state_handle,
     uint8_t*                session_key,
-    size_t                  session_key_buffer_size,
-    uint8_t*                master_key_out,
-    size_t                  master_key_buffer_size);
+    size_t                  session_key_buffer_size);
 
 /* ── Relay size queries ──────────────────────────────────────────────────── */
 

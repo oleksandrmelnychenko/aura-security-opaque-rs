@@ -13,12 +13,12 @@ for a stable human-readable description of a code.
 | `PUBLIC_KEY_LENGTH` | 32 | — |
 | `REGISTRATION_REQUEST_WIRE_LENGTH` | 33 | `opaque_get_registration_request_length()` |
 | `REGISTRATION_RESPONSE_WIRE_LENGTH` | 65 | `opaque_get_registration_response_length()` |
-| `REGISTRATION_RECORD_LENGTH` | 169 | `opaque_get_registration_record_length()` |
+| `REGISTRATION_RECORD_LENGTH` | 201 | `opaque_get_registration_record_length()` |
 | `KE1_LENGTH` | 1273 | `opaque_get_ke1_length()` |
 | `KE2_LENGTH` | 1377 | `opaque_get_ke2_length()` |
 | `KE3_LENGTH` | 65 | `opaque_get_ke3_length()` |
 | `HASH_LENGTH` (session key) | 64 | — |
-| `MASTER_KEY_LENGTH` | 32 | — |
+| `EXPORT_KEY_LENGTH` | 32 | — |
 | `KEM_PUBLIC_KEY_LENGTH` | 1184 | `opaque_get_kem_public_key_length()` |
 | `KEM_CIPHERTEXT_LENGTH` | 1088 | `opaque_get_kem_ciphertext_length()` |
 
@@ -68,9 +68,9 @@ concurrently from different threads.
 │         ◄─── receive response[65] ──────────         │
 │                                                      │
 │ opaque_agent_finalize_registration(                  │
-│     handle, response, 65, state, &record[169], 169)  │
+│     handle, response, 65, state, &record[201], 201)  │
 │                                                      │
-│         ──── send record[169] to server ────►        │
+│         ──── send record[201] to server ────►        │
 └──────────────────────────────────────────────────────┘
 
 ┌─────────────── AUTHENTICATION (each login) ─────────┐
@@ -92,7 +92,7 @@ concurrently from different threads.
 │ opaque_agent_finish(                                 │
 │     handle, state,                                   │
 │     &session_key[64], 64,                            │
-│     &master_key[32], 32)                             │
+│     &export_key[32], 32)                             │
 └──────────────────────────────────────────────────────┘
 
 ┌─────────────────── CLEANUP ─────────────────────────┐
@@ -249,7 +249,9 @@ int32_t opaque_agent_finalize_registration(
 );
 ```
 
-**Registration step 2/2.** Finalizes registration by creating an encrypted envelope.
+**Registration step 2/2.** Finalizes registration by creating a password-derived
+masking key and encrypted envelope. The relay stores both, but KE2 exposes only a
+freshly masked envelope.
 
 | Parameter | Type | Size | Description |
 |-----------|------|------|-------------|
@@ -257,10 +259,10 @@ int32_t opaque_agent_finalize_registration(
 | `response` | `const uint8_t *` | 65 | Server's registration response |
 | `response_length` | `size_t` | — | Must be exactly 65 |
 | `state_handle` | `void *` | — | Same state used in step 1 |
-| `record_out` | `uint8_t *` | >= 169 | Output buffer for the registration record |
-| `record_length` | `size_t` | — | Size of output buffer (must be >= 169) |
+| `record_out` | `uint8_t *` | >= 201 | Output buffer for the registration record |
+| `record_length` | `size_t` | — | Size of output buffer (must be >= 201) |
 
-**Returns:** `0` on success. The 169-byte record is written to `record_out`.
+**Returns:** `0` on success. The 201-byte record is written to `record_out`.
 Send this record to the server for storage. Returns `-5` if the server's public
 key does not match the one given at agent creation (MITM protection).
 
@@ -324,7 +326,8 @@ int32_t opaque_agent_generate_ke3(
 
 This step:
 1. Unblinds the OPRF output and derives the randomized password via Argon2id
-2. Decrypts the envelope to recover the client's static keys
+2. Derives the masking key, unmasks the session-specific credential response,
+   then decrypts the envelope to recover the client's static keys
 3. Performs 4-way Diffie-Hellman
 4. Decapsulates the ML-KEM-768 ciphertext
 5. Combines classical and post-quantum key material (AND-model)
@@ -353,15 +356,15 @@ int32_t opaque_agent_finish(
     void    *state_handle,
     uint8_t *session_key_out,
     size_t   session_key_length,
-    uint8_t *master_key_out,
-    size_t   master_key_length
+    uint8_t *export_key_out,
+    size_t   export_key_length
 );
 ```
 
-**Authentication step 3/3.** Extracts the session key and master key.
+**Authentication step 3/3.** Extracts the shared session key and client-only export key.
 
-Call after `opaque_agent_generate_ke3` succeeds. Both keys are identical on
-client and server, suitable for symmetric encryption (AES-GCM, ChaCha20-Poly1305, etc.).
+Call after `opaque_agent_generate_ke3` succeeds. The session key is shared with
+the relay. The export key is password-authenticated and is never available to the relay.
 
 | Parameter | Type | Size | Description |
 |-----------|------|------|-------------|
@@ -369,8 +372,8 @@ client and server, suitable for symmetric encryption (AES-GCM, ChaCha20-Poly1305
 | `state_handle` | `void *` | — | Same state used in `generate_ke3` |
 | `session_key_out` | `uint8_t *` | >= 64 | Output: 64-byte session key |
 | `session_key_length` | `size_t` | — | Must be >= 64 |
-| `master_key_out` | `uint8_t *` | >= 32 | Output: 32-byte master key |
-| `master_key_length` | `size_t` | — | Must be >= 32 |
+| `export_key_out` | `uint8_t *` | >= 32 | Output: 32-byte client-only export key |
+| `export_key_length` | `size_t` | — | Must be >= 32 |
 
 **Returns:** `0` on success. All sensitive state is securely zeroized after this call.
 
@@ -385,7 +388,7 @@ Use these to allocate buffers dynamically instead of hardcoding sizes.
 | `opaque_get_ke1_length()` | 1273 |
 | `opaque_get_ke2_length()` | 1377 |
 | `opaque_get_ke3_length()` | 65 |
-| `opaque_get_registration_record_length()` | 169 |
+| `opaque_get_registration_record_length()` | 201 |
 | `opaque_get_registration_request_length()` | 33 |
 | `opaque_get_registration_response_length()` | 65 |
 | `opaque_get_kem_public_key_length()` | 1184 |
@@ -444,10 +447,10 @@ opaque_agent_generate_ke3(
 // ... send ke3 to server ...
 
 var sessionKey = [UInt8](repeating: 0, count: 64)
-var masterKey  = [UInt8](repeating: 0, count: 32)
+var exportKey  = [UInt8](repeating: 0, count: 32)
 opaque_agent_finish(
     agentHandle, stateHandle,
-    &sessionKey, 64, &masterKey, 32)
+    &sessionKey, 64, &exportKey, 32)
 
 // Cleanup
 let stateDestroyRc = opaque_agent_state_try_destroy(&stateHandle)

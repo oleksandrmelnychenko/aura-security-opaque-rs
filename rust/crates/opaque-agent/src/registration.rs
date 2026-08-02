@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 use opaque_core::types::{
-    constant_time_eq, Envelope, OpaqueError, OpaqueResult, HASH_LENGTH, MAX_SECURE_KEY_LENGTH,
-    PUBLIC_KEY_LENGTH, REGISTRATION_RESPONSE_WIRE_LENGTH,
+    constant_time_eq, Envelope, OpaqueError, OpaqueResult, HASH_LENGTH, MASKING_KEY_LENGTH,
+    MAX_SECURE_KEY_LENGTH, PUBLIC_KEY_LENGTH, REGISTRATION_RESPONSE_WIRE_LENGTH,
 };
 use opaque_core::{crypto, envelope, oprf, protocol};
 use zeroize::Zeroize;
@@ -109,13 +109,17 @@ pub fn finalize_registration(
 
     state.responder_public_key.copy_from_slice(rpk);
 
+    let mut masking_key = [0u8; MASKING_KEY_LENGTH];
+    crypto::derive_masking_key(&randomized_pwd, &mut masking_key)?;
     record.envelope.clear();
+    record.envelope.extend_from_slice(&masking_key);
     record.envelope.extend_from_slice(&env.nonce);
     record.envelope.extend_from_slice(&env.ciphertext);
     record.envelope.extend_from_slice(&env.auth_tag);
     record.initiator_public_key = state.initiator_public_key;
 
     oprf_output.zeroize();
+    masking_key.zeroize();
     randomized_pwd.zeroize();
     state.secure_key.zeroize();
     state.secure_key_len = 0;

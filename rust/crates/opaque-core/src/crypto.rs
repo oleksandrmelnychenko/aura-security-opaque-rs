@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 use crate::types::{
-    is_all_zero, labels, OpaqueError, OpaqueResult, HASH_LENGTH, MAC_LENGTH, NONCE_LENGTH,
-    OPRF_SEED_LENGTH, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH, SECRETBOX_KEY_LENGTH,
-    SECRETBOX_MAC_LENGTH,
+    is_all_zero, labels, OpaqueError, OpaqueResult, ENVELOPE_LENGTH, HASH_LENGTH, MAC_LENGTH,
+    MASKING_KEY_LENGTH, NONCE_LENGTH, OPRF_SEED_LENGTH, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH,
+    SECRETBOX_KEY_LENGTH, SECRETBOX_MAC_LENGTH,
 };
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crypto_secretbox::aead::{Aead, KeyInit};
 use crypto_secretbox::{Key, Nonce, XSalsa20Poly1305};
@@ -45,7 +45,7 @@ pub fn random_bytes(buf: &mut [u8]) -> OpaqueResult<()> {
     if buf.is_empty() {
         return Err(OpaqueError::InvalidInput);
     }
-    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, buf);
+    rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, buf);
     Ok(())
 }
 
@@ -322,6 +322,67 @@ pub fn derive_randomized_password(
     Ok(())
 }
 
+/// Derives the durable client-only export key from the password-authenticated
+/// OPRF result. The responder participates in OPRF evaluation, but never sees
+/// `randomized_pwd`, so it cannot derive this key from its authentication state.
+pub fn derive_client_export_key(
+    randomized_pwd: &[u8],
+    account_context_hash: &[u8; HASH_LENGTH],
+    export_key: &mut [u8],
+) -> OpaqueResult<()> {
+    if randomized_pwd.is_empty() || is_all_zero(account_context_hash) || export_key.is_empty() {
+        return Err(OpaqueError::InvalidInput);
+    }
+
+    let mut prk = Zeroizing::new([0u8; HASH_LENGTH]);
+    key_derivation_extract(account_context_hash, randomized_pwd, &mut prk)?;
+    key_derivation_expand(&*prk, labels::CLIENT_EXPORT_KEY_INFO, export_key)
+}
+
+pub fn derive_masking_key(
+    randomized_pwd: &[u8],
+    masking_key: &mut [u8; MASKING_KEY_LENGTH],
+) -> OpaqueResult<()> {
+    if randomized_pwd.is_empty() {
+        return Err(OpaqueError::InvalidInput);
+    }
+    let mut prk = Zeroizing::new([0u8; HASH_LENGTH]);
+    key_derivation_extract(labels::MASKING_KEY_INFO, randomized_pwd, &mut prk)?;
+    key_derivation_expand(&*prk, labels::MASKING_KEY_INFO, masking_key)
+}
+
+pub fn mask_credential_envelope(
+    masking_key: &[u8; MASKING_KEY_LENGTH],
+    responder_nonce: &[u8],
+    evaluated_element: &[u8],
+    account_context_hash: &[u8; HASH_LENGTH],
+    input: &[u8; ENVELOPE_LENGTH],
+    output: &mut [u8; ENVELOPE_LENGTH],
+) -> OpaqueResult<()> {
+    if is_all_zero(masking_key)
+        || responder_nonce.len() != NONCE_LENGTH
+        || evaluated_element.len() != PUBLIC_KEY_LENGTH
+        || is_all_zero(account_context_hash)
+    {
+        return Err(OpaqueError::InvalidInput);
+    }
+
+    let mut prk = Zeroizing::new([0u8; HASH_LENGTH]);
+    key_derivation_extract(account_context_hash, masking_key, &mut prk)?;
+    let mut info = Zeroizing::new(Vec::with_capacity(
+        labels::CREDENTIAL_MASKING_INFO.len() + responder_nonce.len() + evaluated_element.len(),
+    ));
+    info.extend_from_slice(labels::CREDENTIAL_MASKING_INFO);
+    info.extend_from_slice(responder_nonce);
+    info.extend_from_slice(evaluated_element);
+    let mut pad = Zeroizing::new([0u8; ENVELOPE_LENGTH]);
+    key_derivation_expand(&*prk, &info, &mut *pad)?;
+    for ((out, source), mask) in output.iter_mut().zip(input).zip(pad.iter()) {
+        *out = *source ^ *mask;
+    }
+    Ok(())
+}
+
 pub fn encrypt_envelope(
     key: &[u8],
     plaintext: &[u8],
@@ -394,7 +455,7 @@ pub fn decrypt_envelope(
 #[inline]
 pub fn random_nonzero_scalar() -> OpaqueResult<[u8; PRIVATE_KEY_LENGTH]> {
     for _ in 0..256 {
-        let mut scalar = Scalar::random(&mut rand::rngs::OsRng);
+        let mut scalar = Scalar::random(&mut rand_core::OsRng);
         let bytes = scalar.to_bytes();
         scalar.zeroize();
         if !is_all_zero(&bytes) {

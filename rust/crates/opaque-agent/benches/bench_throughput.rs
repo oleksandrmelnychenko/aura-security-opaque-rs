@@ -1,11 +1,12 @@
 // Copyright (c) 2026 Oleksandr Melnychenko. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use opaque_agent::*;
 use opaque_core::protocol;
 use opaque_core::types::*;
 use opaque_relay::*;
+use std::hint::black_box;
 
 const ACCOUNT_ID: &[u8] = b"throughput@example.com";
 const PASSWORD: &[u8] = b"throughput benchmark password";
@@ -113,16 +114,13 @@ fn bench_relay_finish_only(c: &mut Criterion) {
             },
             |(mut ss, ke3_bytes)| {
                 let mut sk = [0u8; HASH_LENGTH];
-                let mut mk = [0u8; MASTER_KEY_LENGTH];
                 responder_finish(
                     black_box(&ke3_bytes),
                     black_box(&mut ss),
                     black_box(&mut sk),
-                    black_box(&mut mk),
                 )
                 .unwrap();
                 black_box(sk);
-                black_box(mk);
             },
             criterion::BatchSize::SmallInput,
         )

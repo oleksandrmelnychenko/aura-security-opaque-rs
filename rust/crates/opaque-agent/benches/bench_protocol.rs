@@ -7,6 +7,7 @@ use opaque_core::protocol;
 use opaque_core::types::*;
 use opaque_core::{crypto, pq_kem};
 use opaque_relay::*;
+use std::hint::black_box;
 
 const ACCOUNT_ID: &[u8] = b"bench@example.com";
 const PASSWORD: &[u8] = b"benchmark password for protocol";
@@ -285,8 +286,7 @@ fn bench_auth_finish(c: &mut Criterion) {
             },
             |(mut ss, k3b)| {
                 let mut sk = [0u8; HASH_LENGTH];
-                let mut mk = [0u8; MASTER_KEY_LENGTH];
-                responder_finish(&k3b, &mut ss, &mut sk, &mut mk).unwrap();
+                responder_finish(&k3b, &mut ss, &mut sk).unwrap();
             },
             criterion::BatchSize::SmallInput,
         )
@@ -338,11 +338,10 @@ fn bench_full_authentication(c: &mut Criterion) {
             protocol::write_ke3(&ke3.initiator_mac, &mut k3b).unwrap();
 
             let mut server_sk = [0u8; HASH_LENGTH];
-            let mut server_mk = [0u8; MASTER_KEY_LENGTH];
-            responder_finish(&k3b, &mut ss, &mut server_sk, &mut server_mk).unwrap();
+            responder_finish(&k3b, &mut ss, &mut server_sk).unwrap();
 
             let mut client_sk = [0u8; HASH_LENGTH];
-            let mut client_mk = [0u8; MASTER_KEY_LENGTH];
+            let mut client_mk = [0u8; EXPORT_KEY_LENGTH];
             initiator_finish(&mut cs, &mut client_sk, &mut client_mk).unwrap();
         })
     });
@@ -367,7 +366,7 @@ fn bench_ke3_primitives(c: &mut Criterion) {
             |(sk, ct)| {
                 let mut out = [0u8; pq::KEM_SHARED_SECRET_LENGTH];
                 pq_kem::decapsulate(&sk, &ct, &mut out).unwrap();
-                criterion::black_box(out);
+                black_box(out);
             },
             criterion::BatchSize::SmallInput,
         )
@@ -391,7 +390,7 @@ fn bench_ke3_primitives(c: &mut Criterion) {
                 crypto::scalar_mult(&sk1, &pk2, &mut dh2).unwrap();
                 crypto::scalar_mult(&sk2, &pk1, &mut dh3).unwrap();
                 crypto::scalar_mult(&sk2, &pk2, &mut dh4).unwrap();
-                criterion::black_box((dh1, dh2, dh3, dh4));
+                black_box((dh1, dh2, dh3, dh4));
             },
             criterion::BatchSize::SmallInput,
         )
@@ -429,8 +428,8 @@ fn bench_ke3_primitives(c: &mut Criterion) {
                     &mut session_key,
                 )
                 .unwrap();
-                let mut master_key = [0u8; MASTER_KEY_LENGTH];
-                crypto::key_derivation_expand(&prk, pq_labels::PQ_MASTER_KEY_INFO, &mut master_key)
+                let mut master_key = [0u8; EXPORT_KEY_LENGTH];
+                crypto::key_derivation_expand(&prk, b"benchmark/additional-key", &mut master_key)
                     .unwrap();
 
                 let mut responder_mac_key = [0u8; MAC_LENGTH];
@@ -455,7 +454,7 @@ fn bench_ke3_primitives(c: &mut Criterion) {
                 crypto::hmac_sha512(&initiator_mac_key, &transcript_input, &mut initiator_mac)
                     .unwrap();
 
-                criterion::black_box((session_key, master_key, responder_mac, initiator_mac));
+                black_box((session_key, master_key, responder_mac, initiator_mac));
             },
             criterion::BatchSize::SmallInput,
         )

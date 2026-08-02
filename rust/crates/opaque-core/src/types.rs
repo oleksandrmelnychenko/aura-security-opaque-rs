@@ -5,8 +5,9 @@ use thiserror::Error;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 pub const PROTOCOL_VERSION_1: u8 = 0x01;
+pub const PROTOCOL_VERSION_2: u8 = 0x02;
 
-pub const PROTOCOL_VERSION: u8 = PROTOCOL_VERSION_1;
+pub const PROTOCOL_VERSION: u8 = PROTOCOL_VERSION_2;
 
 pub const VERSION_PREFIX_LENGTH: usize = 1;
 
@@ -16,7 +17,9 @@ pub const PRIVATE_KEY_LENGTH: usize = 32;
 
 pub const PUBLIC_KEY_LENGTH: usize = 32;
 
-pub const MASTER_KEY_LENGTH: usize = 32;
+pub const EXPORT_KEY_LENGTH: usize = 32;
+
+pub const MASKING_KEY_LENGTH: usize = 32;
 
 pub const NONCE_LENGTH: usize = 24;
 
@@ -70,7 +73,10 @@ pub const KE1_PAYLOAD_LENGTH: usize = KE1_BASE_LENGTH + pq::KEM_PUBLIC_KEY_LENGT
 
 pub const KE2_PAYLOAD_LENGTH: usize = KE2_BASE_LENGTH + pq::KEM_CIPHERTEXT_LENGTH;
 
-pub const REGISTRATION_RECORD_PAYLOAD_LENGTH: usize = ENVELOPE_LENGTH + PUBLIC_KEY_LENGTH;
+pub const REGISTRATION_CREDENTIAL_LENGTH: usize = MASKING_KEY_LENGTH + ENVELOPE_LENGTH;
+
+pub const REGISTRATION_RECORD_PAYLOAD_LENGTH: usize =
+    REGISTRATION_CREDENTIAL_LENGTH + PUBLIC_KEY_LENGTH;
 
 pub const KE1_LENGTH: usize = VERSION_PREFIX_LENGTH + KE1_PAYLOAD_LENGTH;
 
@@ -91,13 +97,13 @@ const _: () = assert!(CREDENTIAL_REQUEST_LENGTH == REGISTRATION_REQUEST_LENGTH);
 const _: () = assert!(CREDENTIAL_RESPONSE_LENGTH == PUBLIC_KEY_LENGTH + ENVELOPE_LENGTH);
 const _: () = assert!(KE1_BASE_LENGTH == 88);
 const _: () = assert!(KE2_BASE_LENGTH == 288);
-const _: () = assert!(REGISTRATION_RECORD_PAYLOAD_LENGTH == 168);
+const _: () = assert!(REGISTRATION_RECORD_PAYLOAD_LENGTH == 200);
 const _: () = assert!(KE1_PAYLOAD_LENGTH == 1272);
 const _: () = assert!(KE2_PAYLOAD_LENGTH == 1376);
 const _: () = assert!(KE1_LENGTH == 1273);
 const _: () = assert!(KE2_LENGTH == 1377);
 const _: () = assert!(KE3_LENGTH == 65);
-const _: () = assert!(REGISTRATION_RECORD_LENGTH == 169);
+const _: () = assert!(REGISTRATION_RECORD_LENGTH == 201);
 
 pub const SECRETBOX_KEY_LENGTH: usize = 32;
 
@@ -125,7 +131,15 @@ pub mod labels {
 
     pub const SESSION_KEY_INFO: &[u8] = b"AURA-OPAQUE-v1/SessionKey";
 
-    pub const MASTER_KEY_INFO: &[u8] = b"AURA-OPAQUE-v1/MasterKey";
+    /// Domain separation for the password-authenticated, client-only export key.
+    ///
+    /// Unlike session-key labels, this label must never be used with AKE key
+    /// material that is available to the responder.
+    pub const CLIENT_EXPORT_KEY_INFO: &[u8] = b"AURA-OPAQUE-v2/ClientExportKey";
+
+    pub const MASKING_KEY_INFO: &[u8] = b"AURA-OPAQUE-v2/MaskingKey";
+
+    pub const CREDENTIAL_MASKING_INFO: &[u8] = b"AURA-OPAQUE-v2/CredentialMask";
 
     pub const RESPONDER_MAC_INFO: &[u8] = b"AURA-OPAQUE-v1/ResponderMAC";
 
@@ -143,8 +157,6 @@ pub mod pq_labels {
     pub const PQ_KEM_CONTEXT: &[u8] = b"AURA-OPAQUE-PQ-v1/KEM";
 
     pub const PQ_SESSION_KEY_INFO: &[u8] = b"AURA-OPAQUE-PQ-v1/SessionKey";
-
-    pub const PQ_MASTER_KEY_INFO: &[u8] = b"AURA-OPAQUE-PQ-v1/MasterKey";
 
     pub const PQ_RESPONDER_MAC_INFO: &[u8] = b"AURA-OPAQUE-PQ-v1/ResponderMAC";
 

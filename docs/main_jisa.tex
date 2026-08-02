@@ -526,8 +526,8 @@ prime-order Ristretto255 group of order~$q$ with generator~$g$.
         ephemeral keys $e_C, e_S, sk_{\mathrm{kem}}$;
   \item the registration record
         $\mathrm{rec} = (\mathrm{envelope}, pk_C)$;
-  \item the session key $K_s$, the master key $K_m$, and the shared
-        secret $ss_{\mathrm{kem}}$.
+  \item the shared session key $K_s$, the client-only export key
+        $K_{\mathrm{exp}}$, and the shared secret $ss_{\mathrm{kem}}$.
 \end{itemize}
 
 \textbf{Adversarial model.} Three adversarial classes are considered:
@@ -668,8 +668,8 @@ from uniform up to advantage at most~$\varepsilon$.
 \textbf{Notation:} $\mathbb{G}$ denotes Ristretto255 with
 $|\mathbb{G}| = q$; lowercase letters denote scalars; uppercase letters
 denote curve points; $\|$ denotes concatenation; $H(\cdot)$ denotes
-SHA-512; and $\mathcal{K} = (K_s, K_m)$ denotes the session and master
-keys.
+SHA-512; $K_s$ denotes the shared session key; and $K_{\mathrm{exp}}$
+denotes the password-authenticated export key available only to the initiator.
 
 % ============================================================
 \section{The Proposed Hybrid PQ-OPAQUE Protocol}
@@ -768,7 +768,7 @@ $pk_{\mathrm{kem}}$ and $ct_{\mathrm{kem}}$.
 \label{sec:normative-wire}
 
 All authentication messages are fixed-width byte strings. The first byte
-is the protocol version $v=\mathtt{0x01}$. KE1, KE2, and KE3 contain no
+is the protocol version $v=\mathtt{0x02}$. KE1, KE2, and KE3 contain no
 endian-sensitive integer fields; all components below are copied exactly
 as octet strings at fixed offsets. The account identifier $\acct$ is an
 external authenticated-context input, not a field inside these messages.
@@ -781,20 +781,20 @@ external authenticated-context input, not a field inside these messages.
 \toprule
 Message & Offset range & Field & Length and validation rule \\
 \midrule
-KE1 & 0 & $v$ & 1 byte; must equal \texttt{0x01} \\
+KE1 & 0 & $v$ & 1 byte; must equal \texttt{0x02} \\
 KE1 & 1--32 & $B_{\mathrm{auth}}$ & 32-byte blinded OPRF group element; canonical Ristretto encoding required \\
 KE1 & 33--64 & $E_C$ & 32-byte initiator ephemeral Ristretto public key \\
 KE1 & 65--88 & $n_C$ & 24-byte initiator nonce \\
 KE1 & 89--1272 & $pk_{\mathrm{kem}}$ & 1184-byte ML-KEM-768 public key \\
 \midrule
-KE2 & 0 & $v$ & 1 byte; must equal \texttt{0x01} \\
+KE2 & 0 & $v$ & 1 byte; must equal \texttt{0x02} \\
 KE2 & 1--24 & $n_S$ & 24-byte responder nonce \\
 KE2 & 25--56 & $E_S$ & 32-byte responder ephemeral Ristretto public key \\
 KE2 & 57--224 & $\mathrm{CredResp}$ & 168-byte credential response \\
 KE2 & 225--288 & $\mathrm{MAC}_S$ & 64-byte HMAC-SHA-512 confirmation token \\
 KE2 & 289--1376 & $ct_{\mathrm{kem}}$ & 1088-byte ML-KEM-768 ciphertext \\
 \midrule
-KE3 & 0 & $v$ & 1 byte; must equal \texttt{0x01} \\
+KE3 & 0 & $v$ & 1 byte; must equal \texttt{0x02} \\
 KE3 & 1--64 & $\mathrm{MAC}_C$ & 64-byte HMAC-SHA-512 confirmation token \\
 \bottomrule
 \end{tabularx}
@@ -890,16 +890,21 @@ HARD & $m\geq512$~MiB, $t\geq3$, $p=1$ & No & High-value accounts or environment
 \end{tabularx}
 \end{table}
 The envelope is sealed using XSalsa20-Poly1305 and a key derived via
-HKDF;
-$\mathrm{RegistrationRecord} = \mathrm{Envelope} \| PK_C$
-(168~bytes of payload and 169~bytes in wire format, including the
-version prefix).
+HKDF. A separate 32-byte masking key is derived from the randomized
+password and stored with the credential:
+$\mathrm{RegistrationRecord} = K_{\mathrm{mask}} \| \mathrm{Envelope} \| PK_C$
+(200~bytes of payload and 201~bytes in wire format, including the
+version prefix). During authentication the responder derives a fresh
+pad from $K_{\mathrm{mask}}$, $n_S$, the evaluated OPRF element, and
+$\acct$, then masks $\mathrm{Envelope} \| PK_C$ before constructing
+$\mathrm{CredResp}$. Consequently, two KE2 messages for the same account
+do not expose a stable stored envelope to an unauthenticated collector.
 
 \subsection{Binding of Account Identifier and Context}
 
 The protocol fixes additional context that remains implicit in many
 abstract descriptions of OPAQUE. Every wire-format message carries a
-one-byte version prefix $v = \mathtt{0x01}$, which separates the
+one-byte version prefix $v = \mathtt{0x02}$, which separates the
 payload from the full transmission format and enables rejection of
 unsupported versions. The protocol also uses an explicit account
 identifier $\acct$, a stable byte string naming the account, treated not
@@ -1040,18 +1045,18 @@ hash into the derived session keys.
 \includegraphics[width=\textwidth]{figures/figure4.png}
 \caption{Transcript-bound hybrid key schedule. Classical 4DH material and
 the ML-KEM shared secret are extracted under a transcript-derived salt before
-expansion into session, master, and confirmation keys.}
+expansion into the shared session key and confirmation keys. The client export
+key follows the separate password-authenticated schedule in
+Eq.~\eqref{eq:export-key-derivation}.}
 \label{fig:hybrid-key-schedule}
 \end{figure}
 
 \textbf{Key derivation.} Let
-$\KLabel{s}$, $\KLabel{m}$, $\KLabel{macS}$, and $\KLabel{macC}$
-denote fixed labels for the session key, the master key, and the two
+$\KLabel{s}$, $\KLabel{macS}$, and $\KLabel{macC}$
+denote fixed labels for the session key and the two
 confirmation keys:
 \begin{align}
   K_s &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK}, \KLabel{s}, 64),
-  \notag\\
-  K_m &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK}, \KLabel{m}, 32),
   \notag\\
   K_{\mathrm{mac}}^S &= \mathrm{HKDF\text{-}Expand}(\mathrm{PRK},
     \KLabel{macS}, 64),
@@ -1060,6 +1065,20 @@ confirmation keys:
     \KLabel{macC}, 64).
   \label{eq:key-derivation}
 \end{align}
+After the responder MAC has been verified, the initiator derives a durable
+export key from the password-authenticated randomized password
+$\mathrm{rwd}$ and account-context hash $\eta$:
+\begin{align}
+  \mathrm{PRK}_{\mathrm{exp}} &=
+    \mathrm{HKDF\text{-}Extract}(\eta, \mathrm{rwd}),
+  \notag\\
+  K_{\mathrm{exp}} &=
+    \mathrm{HKDF\text{-}Expand}(\mathrm{PRK}_{\mathrm{exp}},
+      \KLabel{exp}, 32).
+  \label{eq:export-key-derivation}
+\end{align}
+The record-holding responder neither reconstructs $\mathrm{rwd}$ nor receives
+$K_{\mathrm{exp}}$.
 The resulting second authentication message is
 \begin{equation}
   \begin{aligned}
@@ -1097,11 +1116,11 @@ In wire format, the message is $v \| \mathrm{KE2}$ and occupies
 \subsubsection{Completion at the Record-Holding Responder}
 
 KE3 is verified using a constant-time comparison routine. Upon success,
-the pair $(K_s, K_m)$ becomes available to both parties, thereby
-confirming mutual authentication. Completion is fail closed: if KE3 is
+$K_s$ becomes available to both parties, thereby confirming mutual
+authentication; $K_{\mathrm{exp}}$ remains initiator-only. Completion is fail closed: if KE3 is
 malformed, expired, or fails MAC verification after KE2 has been
 generated, no session key is exported; responder-held copies of $K_s$,
-$K_m$, $ss_{\mathrm{kem}}$, the expected initiator MAC, and the
+$ss_{\mathrm{kem}}$, the expected initiator MAC, and the
 responder ephemeral secrets are zeroized; and the state becomes
 terminal or invalidated so the same KE2 state cannot be retried as an
 authentication oracle.
@@ -1970,24 +1989,26 @@ and a rotation policy that treats OPRF-key derivation as privileged
 cryptographic state.
 
 A practical advantage of the migration path is that the
-post-quantum component remains ephemeral and does not enlarge the
-registration record. Migration is concentrated in the application-layer
-authentication logic, version negotiation, and contextual binding of
-$\acct$. The growth of the wire format to 2715~bytes, however, makes
+post-quantum component remains ephemeral. Credential-response masking does
+enlarge the durable registration record by 32 bytes for $K_{\mathrm{mask}}$,
+while leaving the online authentication flight at 2715~bytes. Migration is
+therefore concentrated in the application-layer authentication logic,
+credential re-enrolment, version negotiation, and contextual binding of
+$\acct$. The authentication wire size nevertheless makes
 transport constraints more consequential than in classical OPAQUE: for
 TCP/QUIC this is largely a buffering issue, whereas datagram
 deployments also face fragmentation and MTU concerns.
 
 \subsection{Migration, Compatibility, and Operational Viability}
 
-The construction can be deployed without redesign of the entire
-identity stack for two reasons. First, the registration record does not
-accumulate long-lived post-quantum material, because ML-KEM appears
-only in the ephemeral authentication path. Second, explicit wire-format
-versioning and contextual binding of $\acct$ permit staged rollout
-without invalidating existing user state. For operators, migration is
-therefore closer to controlled protocol evolution than to complete
-credential re-issuance.
+The construction can be deployed without redesign of the entire identity
+stack because the registration record does not accumulate long-lived
+post-quantum material: ML-KEM appears only in the ephemeral authentication
+path. The masking change is nevertheless a deliberate credential-format
+break. Version~\texttt{0x01} records lack $K_{\mathrm{mask}}$ and are rejected;
+operators must stage re-registration or recovery-based re-enrolment before
+enabling version~\texttt{0x02}. Silent fallback to the unmasked legacy format
+would restore the credential-harvesting weakness and is therefore excluded.
 
 Operational compatibility also matters.
 Authentication interacts with login-attempt limits, logging, account

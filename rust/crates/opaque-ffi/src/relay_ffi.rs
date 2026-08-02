@@ -37,16 +37,16 @@
 //! │     &response[65], 65)                               │
 //! │                                                      │
 //! │ ──── send response[65] to client ────►               │
-//! │ ◄─── receive record[169] from client                 │
+//! │ ◄─── receive record[201] from client                 │
 //! │                                                      │
-//! │ Store record[169] in database keyed by account_id    │
+//! │ Store record[201] in database keyed by account_id    │
 //! └──────────────────────────────────────────────────────┘
 //!
 //! ┌────────── AUTHENTICATION (each login) ──────────────┐
 //! │                                                      │
 //! │ ◄─── receive ke1[1273] + account_id from client      │
 //! │                                                      │
-//! │ Load record[169] from database (required)            │
+//! │ Load record[201] from database (required)            │
 //! │                                                      │
 //! │ opaque_relay_state_create(&state_handle)              │
 //! │                                                      │
@@ -65,8 +65,7 @@
 //! │     relay_handle,                                    │
 //! │     ke3, 65,                                         │
 //! │     state_handle,                                    │
-//! │     &session_key[64], 64,                            │
-//! │     &master_key[32], 32)                             │
+//! │     &session_key[64], 64)                            │
 //! │                                                      │
 //! │ opaque_relay_state_destroy(&state_handle)             │
 //! └──────────────────────────────────────────────────────┘
@@ -92,8 +91,8 @@ use zeroize::{Zeroize, Zeroizing};
 
 use opaque_core::protocol;
 use opaque_core::types::{
-    pq, OpaqueError, HASH_LENGTH, KE1_LENGTH, KE2_LENGTH, KE3_LENGTH, MASTER_KEY_LENGTH,
-    OPRF_SEED_LENGTH, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH, REGISTRATION_RECORD_LENGTH,
+    pq, OpaqueError, HASH_LENGTH, KE1_LENGTH, KE2_LENGTH, KE3_LENGTH, OPRF_SEED_LENGTH,
+    PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH, REGISTRATION_RECORD_LENGTH,
     REGISTRATION_REQUEST_WIRE_LENGTH, REGISTRATION_RESPONSE_WIRE_LENGTH,
     RESPONDER_CREDENTIALS_LENGTH,
 };
@@ -579,20 +578,20 @@ pub unsafe extern "C" fn opaque_relay_create_registration_response(
     .unwrap_or(FFI_PANIC)
 }
 
-/// Parses a 169-byte registration record into credentials for use in authentication.
+/// Parses a 201-byte registration record into credentials for use in authentication.
 ///
 /// Call this after receiving the registration record from the client and loading it
-/// from the database. The output `credentials_out` (169 bytes) is passed to
+/// from the database. The output `credentials_out` (201 bytes) is passed to
 /// `opaque_relay_generate_ke2` during authentication.
 ///
 /// # Parameters
 ///
 /// | Name                  | Type        | Size   | Description                              |
 /// |-----------------------|-------------|--------|------------------------------------------|
-/// | `registration_record` | `*const u8` | 169    | Record received from client at registration |
-/// | `record_length`       | `usize`     | —      | Must be exactly 169                      |
-/// | `credentials_out`     | `*mut u8`   | ≥ 169  | Output buffer for parsed credentials     |
-/// | `credentials_out_length`| `usize`   | —      | Size of output buffer (must be ≥ 169)    |
+/// | `registration_record` | `*const u8` | 201    | Record received from client at registration |
+/// | `record_length`       | `usize`     | —      | Must be exactly 201                      |
+/// | `credentials_out`     | `*mut u8`   | ≥ 201  | Output buffer for parsed credentials     |
+/// | `credentials_out_length`| `usize`   | —      | Size of output buffer (must be ≥ 201)    |
 ///
 /// # Returns
 ///
@@ -628,11 +627,18 @@ pub unsafe extern "C" fn opaque_relay_build_credentials(
             Err(e) => return ffi_error_to_int(e),
         }
         let out = std::slice::from_raw_parts_mut(credentials_out, credentials_out_length);
-        result_to_int(protocol::write_registration_record(
-            &creds.envelope,
+        let mut credential_storage = [0u8; opaque_core::types::REGISTRATION_CREDENTIAL_LENGTH];
+        credential_storage[..opaque_core::types::MASKING_KEY_LENGTH]
+            .copy_from_slice(&creds.masking_key);
+        credential_storage[opaque_core::types::MASKING_KEY_LENGTH..]
+            .copy_from_slice(&creds.envelope);
+        let write_result = protocol::write_registration_record(
+            &credential_storage,
             &creds.initiator_public_key,
             out,
-        ))
+        );
+        credential_storage.zeroize();
+        result_to_int(write_result)
     }))
     .unwrap_or(FFI_PANIC)
 }
@@ -656,8 +662,8 @@ pub unsafe extern "C" fn opaque_relay_build_credentials(
 /// | `ke1_length`        | `usize`       | —      | Must be exactly 1273                     |
 /// | `account_id`        | `*const u8`   | ≥ 1    | Account identifier for OPRF key derivation|
 /// | `account_id_length` | `usize`       | —      | Length of account_id in bytes            |
-/// | `credentials_data`  | `*const u8`   | 169/0   | Stored credentials, or `NULL` for unknown user |
-/// | `credentials_length`| `usize`       | —      | Must be exactly 169, or 0 for unknown user |
+/// | `credentials_data`  | `*const u8`   | 201/0   | Stored credentials, or `NULL` for unknown user |
+/// | `credentials_length`| `usize`       | —      | Must be exactly 201, or 0 for unknown user |
 /// | `ke2_data`          | `*mut u8`     | ≥ 1377 | Output buffer for KE2 message            |
 /// | `ke2_buffer_size`   | `usize`       | —      | Size of output buffer (must be ≥ 1377)   |
 /// | `state_handle`      | `*mut void`   | —      | Fresh state from `opaque_relay_state_create`|
@@ -729,10 +735,10 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
                 credential_wire.copy_from_slice(input);
             }
             0 => {
-                let fake_envelope = [0u8; opaque_core::types::ENVELOPE_LENGTH];
+                let fake_credentials = [0u8; opaque_core::types::REGISTRATION_CREDENTIAL_LENGTH];
                 let fake_public_key = rh.responder.public_key();
                 if protocol::write_registration_record(
-                    &fake_envelope,
+                    &fake_credentials,
                     fake_public_key,
                     &mut credential_wire,
                 )
@@ -750,6 +756,7 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
         };
         if opaque_core::crypto::validate_public_key(record_view.initiator_public_key).is_err()
             || record_view.envelope.len() != opaque_core::types::ENVELOPE_LENGTH
+            || record_view.masking_key.len() != opaque_core::types::MASKING_KEY_LENGTH
         {
             return FFI_CORRUPTED_RECORD;
         }
@@ -758,6 +765,7 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
         match credentials_length {
             RESPONDER_CREDENTIALS_LENGTH => {
                 creds.envelope = record_view.envelope.to_vec();
+                creds.masking_key.copy_from_slice(record_view.masking_key);
                 creds
                     .initiator_public_key
                     .copy_from_slice(record_view.initiator_public_key);
@@ -793,10 +801,10 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
 }
 
 /// **Authentication step 2/2 (server side).** Verifies the client's KE3 MAC and
-/// extracts the session key and master key.
+/// extracts the shared session key.
 ///
 /// If the MAC is valid, the handshake is complete and both sides share identical
-/// session key (64 bytes) and master key (32 bytes).
+/// session key (64 bytes). Durable client export keys are never available to the relay.
 ///
 /// After this call, all ephemeral state is securely zeroized.
 ///
@@ -810,8 +818,6 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
 /// | `state_handle`           | `*mut void` | —      | Same state used in `generate_ke2`     |
 /// | `session_key`            | `*mut u8`   | ≥ 64   | Output: 64-byte session key           |
 /// | `session_key_buffer_size`| `usize`     | —      | Must be ≥ 64                          |
-/// | `master_key_out`         | `*mut u8`   | ≥ 32   | Output: 32-byte master key            |
-/// | `master_key_buffer_size` | `usize`     | —      | Must be ≥ 32                          |
 ///
 /// # Returns
 ///
@@ -824,7 +830,6 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
 /// - `state_handle` must be a valid pointer to a `RelayStateHandle` that was used in a prior
 ///   `opaque_relay_generate_ke2` call.
 /// - `session_key` must point to a writable buffer of at least `HASH_LENGTH` (64) bytes.
-/// - `master_key_out` must point to a writable buffer of at least `MASTER_KEY_LENGTH` (32)
 ///   bytes.
 #[no_mangle]
 pub unsafe extern "C" fn opaque_relay_finish(
@@ -834,16 +839,12 @@ pub unsafe extern "C" fn opaque_relay_finish(
     state_handle: *mut std::ffi::c_void,
     session_key: *mut u8,
     session_key_buffer_size: usize,
-    master_key_out: *mut u8,
-    master_key_buffer_size: usize,
 ) -> i32 {
     panic::catch_unwind(AssertUnwindSafe(|| {
         if ke3_data.is_null()
             || ke3_length != KE3_LENGTH
             || session_key.is_null()
             || session_key_buffer_size < HASH_LENGTH
-            || master_key_out.is_null()
-            || master_key_buffer_size < MASTER_KEY_LENGTH
         {
             return OpaqueError::InvalidInput.to_c_int();
         }
@@ -854,18 +855,15 @@ pub unsafe extern "C" fn opaque_relay_finish(
 
         let ke3 = std::slice::from_raw_parts(ke3_data, ke3_length);
         let mut sk = [0u8; HASH_LENGTH];
-        let mut mk = [0u8; MASTER_KEY_LENGTH];
 
-        let rc = match responder_finish(ke3, &mut sh.state, &mut sk, &mut mk) {
+        let rc = match responder_finish(ke3, &mut sh.state, &mut sk) {
             Ok(()) => {
                 ptr::copy_nonoverlapping(sk.as_ptr(), session_key, HASH_LENGTH);
-                ptr::copy_nonoverlapping(mk.as_ptr(), master_key_out, MASTER_KEY_LENGTH);
                 0
             }
             Err(e) => ffi_error_to_int(e),
         };
         sk.zeroize();
-        mk.zeroize();
         rc
     }))
     .unwrap_or(FFI_PANIC)
@@ -953,13 +951,13 @@ pub extern "C" fn opaque_relay_get_ke2_length() -> usize {
     KE2_LENGTH
 }
 
-/// Returns `REGISTRATION_RECORD_LENGTH` (169). Use to validate incoming records.
+/// Returns `REGISTRATION_RECORD_LENGTH` (201). Use to validate incoming records.
 #[no_mangle]
 pub extern "C" fn opaque_relay_get_registration_record_length() -> usize {
     REGISTRATION_RECORD_LENGTH
 }
 
-/// Returns `RESPONDER_CREDENTIALS_LENGTH` (169). Use to allocate the credentials buffer.
+/// Returns `RESPONDER_CREDENTIALS_LENGTH` (201). Use to allocate the credentials buffer.
 #[no_mangle]
 pub extern "C" fn opaque_relay_get_credentials_length() -> usize {
     RESPONDER_CREDENTIALS_LENGTH

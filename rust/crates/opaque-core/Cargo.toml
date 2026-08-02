@@ -14,7 +14,6 @@ crypto_secretbox = { workspace = true }
 subtle = { workspace = true }
 ml-kem = { workspace = true }
 zeroize = { workspace = true }
-rand = { workspace = true }
 rand_core = { workspace = true }
 thiserror = { workspace = true }
 

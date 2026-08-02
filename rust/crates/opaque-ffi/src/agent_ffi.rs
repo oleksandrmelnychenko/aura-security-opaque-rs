@@ -25,9 +25,9 @@
 //! │         ◄─── receive response[65] ──────────         │
 //! │                                                      │
 //! │ opaque_agent_finalize_registration(                   │
-//! │     handle, response, 65, state, &record[169], 169)  │
+//! │     handle, response, 65, state, &record[201], 201)  │
 //! │                                                      │
-//! │         ──── send record[169] to server ────►        │
+//! │         ──── send record[201] to server ────►        │
 //! └──────────────────────────────────────────────────────┘
 //!
 //! ┌─────────────── AUTHENTICATION (each login) ─────────┐
@@ -48,7 +48,7 @@
 //! │ opaque_agent_finish(                                 │
 //! │     handle, state,                                   │
 //! │     &session_key[64], 64,                            │
-//! │     &master_key[32], 32)                             │
+//! │     &export_key[32], 32)                             │
 //! └──────────────────────────────────────────────────────┘
 //!
 //! ┌─────────────────── CLEANUP ─────────────────────────┐
@@ -85,9 +85,9 @@
 //! // ... send ke3 to server ...
 //!
 //! var sessionKey = [UInt8](repeating: 0, count: 64)
-//! var masterKey  = [UInt8](repeating: 0, count: 32)
+//! var exportKey  = [UInt8](repeating: 0, count: 32)
 //! opaque_agent_finish(agentHandle, stateHandle,
-//!                     &sessionKey, 64, &masterKey, 32)
+//!                     &sessionKey, 64, &exportKey, 32)
 //!
 //! // Cleanup
 //! opaque_agent_state_destroy(&stateHandle)
@@ -107,7 +107,7 @@ use opaque_agent::{
 };
 use opaque_core::protocol;
 use opaque_core::types::{
-    pq, OpaqueError, HASH_LENGTH, KE1_LENGTH, KE2_LENGTH, KE3_LENGTH, MASTER_KEY_LENGTH,
+    pq, OpaqueError, EXPORT_KEY_LENGTH, HASH_LENGTH, KE1_LENGTH, KE2_LENGTH, KE3_LENGTH,
     MAX_SECURE_KEY_LENGTH, PUBLIC_KEY_LENGTH, REGISTRATION_RECORD_LENGTH,
     REGISTRATION_REQUEST_WIRE_LENGTH, REGISTRATION_RESPONSE_WIRE_LENGTH,
 };
@@ -445,7 +445,7 @@ pub unsafe extern "C" fn opaque_agent_create_registration_request(
 /// **Registration step 2/2.** Finalizes registration by creating an encrypted envelope
 /// (the registration record).
 ///
-/// Takes the server's 65-byte registration response and produces a 169-byte registration
+/// Takes the server's 65-byte registration response and produces a 201-byte registration
 /// record. The record must be sent to the server for storage — it contains the encrypted
 /// envelope and the client's static public key. The server cannot decrypt the envelope.
 ///
@@ -457,12 +457,12 @@ pub unsafe extern "C" fn opaque_agent_create_registration_request(
 /// | `response`        | `*const u8`   | 65     | Server's registration response           |
 /// | `response_length` | `usize`       | —      | Must be exactly 65                       |
 /// | `state_handle`    | `*mut void`   | —      | Same state used in step 1                |
-/// | `record_out`      | `*mut u8`     | ≥ 169  | Output buffer for the registration record|
-/// | `record_length`   | `usize`       | —      | Size of output buffer (must be ≥ 169)    |
+/// | `record_out`      | `*mut u8`     | ≥ 201  | Output buffer for the registration record|
+/// | `record_length`   | `usize`       | —      | Size of output buffer (must be ≥ 201)    |
 ///
 /// # Returns
 ///
-/// `0` on success. The 169-byte record is written to `record_out`.
+/// `0` on success. The 201-byte record is written to `record_out`.
 /// Returns `-5` if the server's public key in the response does not match the one
 /// provided at agent creation (MITM protection).
 ///
@@ -695,12 +695,12 @@ pub unsafe extern "C" fn opaque_agent_generate_ke3(
     .unwrap_or(FFI_PANIC)
 }
 
-/// **Authentication step 3/3.** Extracts the session key and master key after a
+/// **Authentication step 3/3.** Extracts the session key and client-only export key after a
 /// successful handshake.
 ///
 /// Call this after `opaque_agent_generate_ke3` succeeds. The session key (64 bytes) and
-/// master key (32 bytes) are identical on both client and server, and can be used
-/// for subsequent symmetric encryption (e.g., AES-GCM, ChaCha20-Poly1305).
+/// export key (32 bytes) is derived from the password-authenticated OPRF result
+/// and is never available to the relay. The session key is shared with the relay.
 ///
 /// After this call, all sensitive state is securely zeroized.
 ///
@@ -712,8 +712,8 @@ pub unsafe extern "C" fn opaque_agent_generate_ke3(
 /// | `state_handle`     | `*mut void` | —     | Same state used in `generate_ke3`        |
 /// | `session_key_out`  | `*mut u8`   | ≥ 64  | Output buffer for the 64-byte session key|
 /// | `session_key_length`| `usize`    | —     | Size of session key buffer (must be ≥ 64)|
-/// | `master_key_out`   | `*mut u8`   | ≥ 32  | Output buffer for the 32-byte master key |
-/// | `master_key_length`| `usize`     | —     | Size of master key buffer (must be ≥ 32) |
+/// | `export_key_out`   | `*mut u8`   | ≥ 32  | Output buffer for the 32-byte client export key |
+/// | `export_key_length`| `usize`     | —     | Size of export-key buffer (must be ≥ 32) |
 ///
 /// # Returns
 ///
@@ -726,7 +726,7 @@ pub unsafe extern "C" fn opaque_agent_generate_ke3(
 /// - `state_handle` must be a valid pointer to an `AgentStateHandle` used in the prior
 ///   `opaque_agent_generate_ke3` call.
 /// - `session_key_out` must point to a writable buffer of at least `HASH_LENGTH` (64) bytes.
-/// - `master_key_out` must point to a writable buffer of at least `MASTER_KEY_LENGTH` (32)
+/// - `export_key_out` must point to a writable buffer of at least `EXPORT_KEY_LENGTH` (32)
 ///   bytes.
 #[no_mangle]
 pub unsafe extern "C" fn opaque_agent_finish(
@@ -734,14 +734,14 @@ pub unsafe extern "C" fn opaque_agent_finish(
     state_handle: *mut std::ffi::c_void,
     session_key_out: *mut u8,
     session_key_length: usize,
-    master_key_out: *mut u8,
-    master_key_length: usize,
+    export_key_out: *mut u8,
+    export_key_length: usize,
 ) -> i32 {
     panic::catch_unwind(AssertUnwindSafe(|| {
         if session_key_out.is_null()
             || session_key_length < HASH_LENGTH
-            || master_key_out.is_null()
-            || master_key_length < MASTER_KEY_LENGTH
+            || export_key_out.is_null()
+            || export_key_length < EXPORT_KEY_LENGTH
         {
             return OpaqueError::InvalidInput.to_c_int();
         }
@@ -754,18 +754,18 @@ pub unsafe extern "C" fn opaque_agent_finish(
         }
 
         let mut session_key = [0u8; HASH_LENGTH];
-        let mut master_key = [0u8; MASTER_KEY_LENGTH];
+        let mut export_key = [0u8; EXPORT_KEY_LENGTH];
 
-        let rc = match initiator_finish(&mut sh.state, &mut session_key, &mut master_key) {
+        let rc = match initiator_finish(&mut sh.state, &mut session_key, &mut export_key) {
             Ok(()) => {
                 ptr::copy_nonoverlapping(session_key.as_ptr(), session_key_out, HASH_LENGTH);
-                ptr::copy_nonoverlapping(master_key.as_ptr(), master_key_out, MASTER_KEY_LENGTH);
+                ptr::copy_nonoverlapping(export_key.as_ptr(), export_key_out, EXPORT_KEY_LENGTH);
                 0
             }
             Err(e) => ffi_error_to_int(e),
         };
         session_key.zeroize();
-        master_key.zeroize();
+        export_key.zeroize();
         sh.ke3_exported = false;
         rc
     }))
@@ -790,7 +790,7 @@ pub extern "C" fn opaque_get_ke3_length() -> usize {
     KE3_LENGTH
 }
 
-/// Returns `REGISTRATION_RECORD_LENGTH` (169). Use to allocate the record output buffer.
+/// Returns `REGISTRATION_RECORD_LENGTH` (201). Use to allocate the record output buffer.
 #[no_mangle]
 pub extern "C" fn opaque_get_registration_record_length() -> usize {
     REGISTRATION_RECORD_LENGTH

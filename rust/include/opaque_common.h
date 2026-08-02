@@ -23,9 +23,9 @@ extern "C" {
 #define OPAQUE_KE3_LENGTH                      65
 #define OPAQUE_REGISTRATION_REQUEST_LENGTH     33
 #define OPAQUE_REGISTRATION_RESPONSE_LENGTH    65
-#define OPAQUE_REGISTRATION_RECORD_LENGTH     169
+#define OPAQUE_REGISTRATION_RECORD_LENGTH     201
 #define OPAQUE_SESSION_KEY_LENGTH              64
-#define OPAQUE_MASTER_KEY_LENGTH               32
+#define OPAQUE_EXPORT_KEY_LENGTH               32
 #define OPAQUE_OPRF_SEED_LENGTH                32
 #define OPAQUE_PUBLIC_KEY_LENGTH               32
 #define OPAQUE_PRIVATE_KEY_LENGTH              32

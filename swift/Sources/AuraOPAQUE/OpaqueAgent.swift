@@ -153,7 +153,7 @@ public final class OpaqueAgent: @unchecked Sendable {
         return request
     }
 
-    /// **Registration step 2/2.** Finalizes registration and returns a 169-byte record.
+    /// **Registration step 2/2.** Finalizes registration and returns a 201-byte record.
     ///
     /// - Throws: ``OpaqueError/authenticationError`` if server public key doesn't match (MITM).
     public func finalizeRegistration(response: Data, state: AgentState) throws -> Data {
@@ -263,7 +263,7 @@ public final class OpaqueAgent: @unchecked Sendable {
         return ke3
     }
 
-    /// **Authentication step 3/3.** Extracts shared session (64 bytes) and master (32 bytes) keys.
+    /// **Authentication step 3/3.** Extracts the shared session key and client-only export key.
     ///
     /// Keys are memory-locked and must be explicitly disposed after use.
     public func finish(state: AgentState) throws -> AuthenticationKeys {
@@ -272,29 +272,29 @@ public final class OpaqueAgent: @unchecked Sendable {
         guard let handle = handle else { throw OpaqueError.invalidState }
 
         var sessionKey = Data(count: Constants.sessionKeyLength)
-        var masterKey  = Data(count: Constants.masterKeyLength)
+        var exportKey  = Data(count: Constants.exportKeyLength)
         defer {
             secureZeroData(&sessionKey)
-            secureZeroData(&masterKey)
+            secureZeroData(&exportKey)
         }
 
         let result = try state.withHandle { stateHandle in
             sessionKey.withUnsafeMutableBytes { sessionPtr in
-                masterKey.withUnsafeMutableBytes { masterPtr in
+                exportKey.withUnsafeMutableBytes { exportPtr in
                     opaque_agent_finish(
                         handle,
                         stateHandle,
                         sessionPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
                         Constants.sessionKeyLength,
-                        masterPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        Constants.masterKeyLength
+                        exportPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        Constants.exportKeyLength
                     )
                 }
             }
         }
 
         guard result.rawValue == 0 else { throw OpaqueError.fromCode(result) }
-        return AuthenticationKeys(sessionKey: sessionKey, masterKey: masterKey)
+        return AuthenticationKeys(sessionKey: sessionKey, exportKey: exportKey)
     }
 }
 
@@ -344,25 +344,25 @@ extension OpaqueAgent {
 
 // ── AuthenticationKeys ────────────────────────────────────────────────────────
 
-/// Shared cryptographic keys produced after a successful authentication.
+/// Cryptographic keys produced after a successful authentication.
 ///
 /// Keys are memory-locked (`mlock`) to prevent swapping to disk.
-/// Access them through ``withSessionKey(_:)`` and ``withMasterKey(_:)``,
+/// Access them through ``withSessionKey(_:)`` and ``withExportKey(_:)``,
 /// then call ``dispose()`` to securely zeroize and unlock the memory.
 public final class AuthenticationKeys: @unchecked Sendable {
     private var _sessionKey: Data
-    private var _masterKey:  Data
+    private var _exportKey:  Data
     private let lock    = NSLock()
     private var disposed = false
 
-    internal init(sessionKey: Data, masterKey: Data) {
+    internal init(sessionKey: Data, exportKey: Data) {
         self._sessionKey = sessionKey
-        self._masterKey  = masterKey
+        self._exportKey  = exportKey
         _sessionKey.withUnsafeMutableBytes { bytes in
             guard let base = bytes.baseAddress else { return }
             _ = mlock(base, bytes.count)
         }
-        _masterKey.withUnsafeMutableBytes { bytes in
+        _exportKey.withUnsafeMutableBytes { bytes in
             guard let base = bytes.baseAddress else { return }
             _ = mlock(base, bytes.count)
         }
@@ -377,13 +377,13 @@ public final class AuthenticationKeys: @unchecked Sendable {
         return try body(_sessionKey)
     }
 
-    /// Accesses the 32-byte master key within a scoped closure.
+    /// Accesses the 32-byte password-authenticated client export key within a scoped closure.
     /// - Throws: ``OpaqueError/invalidState`` if already disposed.
-    public func withMasterKey<T>(_ body: (Data) throws -> T) throws -> T {
+    public func withExportKey<T>(_ body: (Data) throws -> T) throws -> T {
         lock.lock()
         defer { lock.unlock() }
         guard !disposed else { throw OpaqueError.invalidState }
-        return try body(_masterKey)
+        return try body(_exportKey)
     }
 
     /// Securely zeroizes both keys and unlocks the memory pages.
@@ -398,13 +398,13 @@ public final class AuthenticationKeys: @unchecked Sendable {
             secureZeroBytes(base.assumingMemoryBound(to: UInt8.self), bytes.count)
             munlock(base, bytes.count)
         }
-        _masterKey.withUnsafeMutableBytes { bytes in
+        _exportKey.withUnsafeMutableBytes { bytes in
             guard let base = bytes.baseAddress else { return }
             secureZeroBytes(base.assumingMemoryBound(to: UInt8.self), bytes.count)
             munlock(base, bytes.count)
         }
         _sessionKey = Data()
-        _masterKey  = Data()
+        _exportKey  = Data()
     }
 
     deinit { dispose() }
@@ -419,9 +419,9 @@ extension OpaqueAgent {
         public static let privateKeyLength             = 32
         public static let registrationRequestLength    = 33
         public static let registrationResponseLength   = 65
-        public static let registrationRecordLength     = 169
+        public static let registrationRecordLength     = 201
         public static let sessionKeyLength             = 64
-        public static let masterKeyLength              = 32
+        public static let exportKeyLength              = 32
         public static let ke1Length                    = 1273
         public static let ke2Length                    = 1377
         public static let ke3Length                    = 65

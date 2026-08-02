@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 use crate::types::{
-    pq, OpaqueError, OpaqueResult, CREDENTIAL_RESPONSE_LENGTH, ENVELOPE_LENGTH, KE1_BASE_LENGTH,
-    KE1_LENGTH, KE2_BASE_LENGTH, KE2_LENGTH, KE3_LENGTH, MAC_LENGTH, NONCE_LENGTH,
-    PROTOCOL_VERSION, PROTOCOL_VERSION_1, PUBLIC_KEY_LENGTH, REGISTRATION_RECORD_LENGTH,
-    REGISTRATION_REQUEST_LENGTH, REGISTRATION_REQUEST_WIRE_LENGTH,
+    pq, OpaqueError, OpaqueResult, CREDENTIAL_RESPONSE_LENGTH, KE1_BASE_LENGTH, KE1_LENGTH,
+    KE2_BASE_LENGTH, KE2_LENGTH, KE3_LENGTH, MAC_LENGTH, MASKING_KEY_LENGTH, NONCE_LENGTH,
+    PROTOCOL_VERSION, PROTOCOL_VERSION_2, PUBLIC_KEY_LENGTH, REGISTRATION_CREDENTIAL_LENGTH,
+    REGISTRATION_RECORD_LENGTH, REGISTRATION_REQUEST_LENGTH, REGISTRATION_REQUEST_WIRE_LENGTH,
     REGISTRATION_RESPONSE_WIRE_LENGTH, VERSION_PREFIX_LENGTH,
 };
 
@@ -17,9 +17,11 @@ const REG_RESP_EVALUATED_OFFSET: usize = V;
 
 const REG_RESP_RESPONDER_KEY_OFFSET: usize = V + REGISTRATION_REQUEST_LENGTH;
 
-const REG_RECORD_ENVELOPE_OFFSET: usize = V;
+const REG_RECORD_MASKING_KEY_OFFSET: usize = V;
 
-const REG_RECORD_INITIATOR_KEY_OFFSET: usize = V + ENVELOPE_LENGTH;
+const REG_RECORD_ENVELOPE_OFFSET: usize = V + MASKING_KEY_LENGTH;
+
+const REG_RECORD_INITIATOR_KEY_OFFSET: usize = V + REGISTRATION_CREDENTIAL_LENGTH;
 
 const KE1_CRED_REQ_OFFSET: usize = V;
 
@@ -47,7 +49,7 @@ fn check_version(data: &[u8]) -> OpaqueResult<()> {
         return Err(OpaqueError::InvalidProtocolMessage);
     }
     match data[0] {
-        PROTOCOL_VERSION_1 => Ok(()),
+        PROTOCOL_VERSION_2 => Ok(()),
         _ => Err(OpaqueError::UnsupportedVersion),
     }
 }
@@ -59,6 +61,8 @@ pub struct RegistrationResponseRef<'a> {
 }
 
 pub struct RegistrationRecordRef<'a> {
+    pub masking_key: &'a [u8],
+
     pub envelope: &'a [u8],
 
     pub initiator_public_key: &'a [u8],
@@ -115,6 +119,7 @@ pub fn parse_registration_record(data: &[u8]) -> OpaqueResult<RegistrationRecord
     }
     check_version(data)?;
     Ok(RegistrationRecordRef {
+        masking_key: &data[REG_RECORD_MASKING_KEY_OFFSET..REG_RECORD_ENVELOPE_OFFSET],
         envelope: &data[REG_RECORD_ENVELOPE_OFFSET..REG_RECORD_INITIATOR_KEY_OFFSET],
         initiator_public_key: &data[REG_RECORD_INITIATOR_KEY_OFFSET..],
     })
@@ -158,18 +163,19 @@ pub fn parse_ke3(data: &[u8]) -> OpaqueResult<Ke3Ref<'_>> {
 }
 
 pub fn write_registration_record(
-    envelope: &[u8],
+    credential_storage: &[u8],
     initiator_public_key: &[u8],
     out: &mut [u8],
 ) -> OpaqueResult<()> {
-    if envelope.len() != ENVELOPE_LENGTH
+    if credential_storage.len() != REGISTRATION_CREDENTIAL_LENGTH
         || initiator_public_key.len() != PUBLIC_KEY_LENGTH
         || out.len() < REGISTRATION_RECORD_LENGTH
     {
         return Err(OpaqueError::InvalidProtocolMessage);
     }
     out[0] = PROTOCOL_VERSION;
-    out[REG_RECORD_ENVELOPE_OFFSET..REG_RECORD_INITIATOR_KEY_OFFSET].copy_from_slice(envelope);
+    out[REG_RECORD_MASKING_KEY_OFFSET..REG_RECORD_INITIATOR_KEY_OFFSET]
+        .copy_from_slice(credential_storage);
     out[REG_RECORD_INITIATOR_KEY_OFFSET..REGISTRATION_RECORD_LENGTH]
         .copy_from_slice(initiator_public_key);
     Ok(())

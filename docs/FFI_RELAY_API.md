@@ -16,13 +16,12 @@ for a stable human-readable description of a code.
 | `OPRF_SEED_LENGTH` | 32 | — |
 | `REGISTRATION_REQUEST_WIRE_LENGTH` | 33 | `opaque_relay_get_registration_request_length()` |
 | `REGISTRATION_RESPONSE_WIRE_LENGTH` | 65 | `opaque_relay_get_registration_response_length()` |
-| `REGISTRATION_RECORD_LENGTH` | 169 | `opaque_relay_get_registration_record_length()` |
-| `RESPONDER_CREDENTIALS_LENGTH` | 169 | `opaque_relay_get_credentials_length()` |
+| `REGISTRATION_RECORD_LENGTH` | 201 | `opaque_relay_get_registration_record_length()` |
+| `RESPONDER_CREDENTIALS_LENGTH` | 201 | `opaque_relay_get_credentials_length()` |
 | `KE1_LENGTH` | 1273 | `opaque_relay_get_ke1_length()` |
 | `KE2_LENGTH` | 1377 | `opaque_relay_get_ke2_length()` |
 | `KE3_LENGTH` | 65 | `opaque_relay_get_ke3_length()` |
 | `HASH_LENGTH` (session key) | 64 | — |
-| `MASTER_KEY_LENGTH` | 32 | — |
 | `KEM_CIPHERTEXT_LENGTH` | 1088 | `opaque_relay_get_kem_ciphertext_length()` |
 
 ## Return Codes
@@ -84,19 +83,19 @@ concurrently from different threads.
 │     &response[65], 65)                               │
 │                                                      │
 │ ──── send response[65] to client ────►               │
-│ ◄─── receive record[169] from client                 │
+│ ◄─── receive record[201] from client                 │
 │                                                      │
 │ opaque_relay_build_credentials(                       │
-│     record, 169, &credentials[169], 169)             │
+│     record, 201, &credentials[201], 201)             │
 │                                                      │
-│ Store credentials[169] in DB keyed by account_id     │
+│ Store credentials[201] in DB keyed by account_id     │
 └──────────────────────────────────────────────────────┘
 
 ┌────────── AUTHENTICATION (each login) ──────────────┐
 │                                                      │
 │ ◄─── receive ke1[1273] + account_id from client      │
 │                                                      │
-│ Load credentials[169] from DB (required)             │
+│ Load credentials[201] from DB (required)             │
 │                                                      │
 │ opaque_relay_state_create(&state_handle)              │
 │                                                      │
@@ -104,7 +103,7 @@ concurrently from different threads.
 │     relay_handle,                                    │
 │     ke1, 1273,                                       │
 │     account_id, account_id_len,                      │
-│     credentials, 169,                                │
+│     credentials, 201,                                │
 │     &ke2[1377], 1377,                                │
 │     state_handle)                                    │
 │                                                      │
@@ -115,8 +114,7 @@ concurrently from different threads.
 │     relay_handle,                                    │
 │     ke3, 65,                                         │
 │     state_handle,                                    │
-│     &session_key[64], 64,                            │
-│     &master_key[32], 32)                             │
+│     &session_key[64], 64)                            │
 │                                                      │
 │ opaque_relay_state_destroy(&state_handle)             │
 └──────────────────────────────────────────────────────┘
@@ -366,19 +364,19 @@ int32_t opaque_relay_build_credentials(
 );
 ```
 
-Parses a 169-byte registration record into credentials for use in authentication.
+Parses a 201-byte registration record into credentials for use in authentication.
 Call after receiving the record from the client and before storing.
 
 | Parameter | Type | Size | Description |
 |-----------|------|------|-------------|
-| `registration_record` | `const uint8_t *` | 169 | Record received from client |
-| `record_length` | `size_t` | — | Must be exactly 169 |
-| `credentials_out` | `uint8_t *` | >= 169 | Output buffer for parsed credentials |
-| `credentials_out_length` | `size_t` | — | Must be >= 169 |
+| `registration_record` | `const uint8_t *` | 201 | Record received from client |
+| `record_length` | `size_t` | — | Must be exactly 201 |
+| `credentials_out` | `uint8_t *` | >= 201 | Output buffer for parsed credentials |
+| `credentials_out_length` | `size_t` | — | Must be >= 201 |
 
 **Returns:** `0` on success. Returns `-7` if the account is already registered.
 
-Store the 169-byte credentials in the database keyed by account_id.
+Store the 201-byte credentials in the database keyed by account_id.
 Pass them to `opaque_relay_generate_ke2` during authentication.
 
 ---
@@ -417,8 +415,8 @@ This step:
 | `ke1_length` | `size_t` | — | Must be exactly 1273 |
 | `account_id` | `const uint8_t *` | 1-1024 | Account identifier for OPRF key derivation |
 | `account_id_length` | `size_t` | — | Length of account_id |
-| `credentials_data` | `const uint8_t *` | 169 / 0 | Stored credentials, or `NULL` for unknown user |
-| `credentials_length` | `size_t` | — | Must be exactly 169, or 0 for unknown user |
+| `credentials_data` | `const uint8_t *` | 201 / 0 | Stored credentials, or `NULL` for unknown user |
+| `credentials_length` | `size_t` | — | Must be exactly 201, or 0 for unknown user |
 | `ke2_data` | `uint8_t *` | >= 1377 | Output buffer for KE2 message |
 | `ke2_buffer_size` | `size_t` | — | Must be >= 1377 |
 | `state_handle` | `void *` | — | Fresh state from `opaque_relay_state_create` |
@@ -439,14 +437,12 @@ int32_t opaque_relay_finish(
     size_t         ke3_length,
     void          *state_handle,
     uint8_t       *session_key,
-    size_t         session_key_buffer_size,
-    uint8_t       *master_key_out,
-    size_t         master_key_buffer_size
+    size_t         session_key_buffer_size
 );
 ```
 
 **Authentication step 2/2 (server side).** Verifies the client's KE3 MAC and
-extracts the session key and master key.
+extracts the shared session key. Client export keys are not available to the relay.
 
 | Parameter | Type | Size | Description |
 |-----------|------|------|-------------|
@@ -456,8 +452,6 @@ extracts the session key and master key.
 | `state_handle` | `void *` | — | Same state used in `generate_ke2` |
 | `session_key` | `uint8_t *` | >= 64 | Output: 64-byte session key |
 | `session_key_buffer_size` | `size_t` | — | Must be >= 64 |
-| `master_key_out` | `uint8_t *` | >= 32 | Output: 32-byte master key |
-| `master_key_buffer_size` | `size_t` | — | Must be >= 32 |
 
 **Returns:** `0` on success (client authenticated). Returns `-5` if the client's
 MAC is invalid (wrong password or tampered KE3). All ephemeral state is securely
@@ -474,10 +468,10 @@ Use these to allocate buffers dynamically instead of hardcoding sizes.
 | `opaque_relay_get_ke1_length()` | 1273 |
 | `opaque_relay_get_ke2_length()` | 1377 |
 | `opaque_relay_get_ke3_length()` | 65 |
-| `opaque_relay_get_registration_record_length()` | 169 |
+| `opaque_relay_get_registration_record_length()` | 201 |
 | `opaque_relay_get_registration_request_length()` | 33 |
 | `opaque_relay_get_registration_response_length()` | 65 |
-| `opaque_relay_get_credentials_length()` | 169 |
+| `opaque_relay_get_credentials_length()` | 201 |
 | `opaque_relay_get_kem_ciphertext_length()` | 1088 |
 
 ## Go Example
@@ -512,7 +506,7 @@ extern int32_t opaque_relay_generate_ke2(
     uint8_t *ke2, size_t ke2_len, void *state);
 extern int32_t opaque_relay_finish(
     const void *relay, const uint8_t *ke3, size_t ke3_len,
-    void *state, uint8_t *sk, size_t sk_len, uint8_t *mk, size_t mk_len);
+    void *state, uint8_t *sk, size_t sk_len);
 extern size_t opaque_relay_get_ke2_length();
 extern size_t opaque_relay_get_registration_request_length();
 extern size_t opaque_relay_get_registration_response_length();
@@ -547,7 +541,7 @@ func main() {
         (*C.uint8_t)(&accountID[0]), C.size_t(len(accountID)),
         (*C.uint8_t)(&response[0]), C.size_t(len(response)))
 
-    // ... send response to client, receive record (169 bytes) ...
+    // ... send response to client, receive record (201 bytes) ...
 
     credentials := make([]byte, C.opaque_relay_get_credentials_length())
     C.opaque_relay_build_credentials(
@@ -574,16 +568,14 @@ func main() {
     // ... send ke2 to client, receive ke3 (65 bytes) ...
 
     sessionKey := make([]byte, 64)
-    masterKey := make([]byte, 32)
     rc := C.opaque_relay_finish(
         relayHandle,
         (*C.uint8_t)(&ke3[0]), C.size_t(len(ke3)),
         stateHandle,
-        (*C.uint8_t)(&sessionKey[0]), 64,
-        (*C.uint8_t)(&masterKey[0]), 32)
+        (*C.uint8_t)(&sessionKey[0]), 64)
 
     if rc == 0 {
-        // Authentication successful — sessionKey and masterKey are shared with client
+        // Authentication successful — sessionKey is shared with client
     }
 }
 ```

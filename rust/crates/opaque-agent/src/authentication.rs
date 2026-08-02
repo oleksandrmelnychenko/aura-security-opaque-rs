@@ -3,9 +3,9 @@
 
 use opaque_core::types::{
     constant_time_eq, labels, pq, pq_labels, OpaqueError, OpaqueResult, CLASSICAL_IKM_LENGTH,
-    CREDENTIAL_RESPONSE_LENGTH, DH_COMPONENT_COUNT, ENVELOPE_LENGTH, HASH_LENGTH, KE2_LENGTH,
-    MAC_LENGTH, MASTER_KEY_LENGTH, MAX_SECURE_KEY_LENGTH, NONCE_LENGTH, PRIVATE_KEY_LENGTH,
-    PUBLIC_KEY_LENGTH, SECRETBOX_MAC_LENGTH,
+    CREDENTIAL_RESPONSE_LENGTH, DH_COMPONENT_COUNT, ENVELOPE_LENGTH, EXPORT_KEY_LENGTH,
+    HASH_LENGTH, KE2_LENGTH, MAC_LENGTH, MASKING_KEY_LENGTH, MAX_SECURE_KEY_LENGTH, NONCE_LENGTH,
+    PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH, SECRETBOX_MAC_LENGTH,
 };
 use opaque_core::{crypto, envelope, oprf, pq_kem, protocol};
 use zeroize::{Zeroize, Zeroizing};
@@ -111,7 +111,7 @@ pub fn generate_ke3(
         crypto::validate_public_key(responder_ephemeral_public_key)?;
 
         let evaluated_elem = &credential_response[..PUBLIC_KEY_LENGTH];
-        let envelope_data = &credential_response[PUBLIC_KEY_LENGTH..];
+        let masked_envelope_data = &credential_response[PUBLIC_KEY_LENGTH..];
 
         let mut oprf_output = Zeroizing::new([0u8; HASH_LENGTH]);
         oprf::finalize(
@@ -132,6 +132,21 @@ pub fn generate_ke3(
         state.secure_key.zeroize();
         state.secure_key_len = 0;
         state.oblivious_prf_blind_scalar.zeroize();
+
+        let mut masking_key = Zeroizing::new([0u8; MASKING_KEY_LENGTH]);
+        crypto::derive_masking_key(&*randomized_pwd, &mut masking_key)?;
+        let masked_envelope: &[u8; ENVELOPE_LENGTH] = masked_envelope_data
+            .try_into()
+            .map_err(|_| OpaqueError::InvalidProtocolMessage)?;
+        let mut envelope_data = Zeroizing::new([0u8; ENVELOPE_LENGTH]);
+        crypto::mask_credential_envelope(
+            &masking_key,
+            responder_nonce,
+            evaluated_elem,
+            &state.account_context_hash,
+            masked_envelope,
+            &mut envelope_data,
+        )?;
 
         let ct_size = ENVELOPE_LENGTH - NONCE_LENGTH - SECRETBOX_MAC_LENGTH;
         let env_nonce = &envelope_data[..NONCE_LENGTH];
@@ -222,9 +237,6 @@ pub fn generate_ke3(
         let mut session_key = Zeroizing::new([0u8; HASH_LENGTH]);
         crypto::key_derivation_expand(&*prk, pq_labels::PQ_SESSION_KEY_INFO, &mut *session_key)?;
 
-        let mut master_key = Zeroizing::new([0u8; MASTER_KEY_LENGTH]);
-        crypto::key_derivation_expand(&*prk, pq_labels::PQ_MASTER_KEY_INFO, &mut *master_key)?;
-
         let mut resp_mac_key = Zeroizing::new([0u8; MAC_LENGTH]);
         crypto::key_derivation_expand(&*prk, pq_labels::PQ_RESPONDER_MAC_INFO, &mut *resp_mac_key)?;
 
@@ -235,6 +247,13 @@ pub fn generate_ke3(
             return Err(OpaqueError::AuthenticationError);
         }
 
+        let mut export_key = Zeroizing::new([0u8; EXPORT_KEY_LENGTH]);
+        crypto::derive_client_export_key(
+            &*randomized_pwd,
+            &state.account_context_hash,
+            &mut *export_key,
+        )?;
+
         let mut init_mac_key = Zeroizing::new([0u8; MAC_LENGTH]);
         crypto::key_derivation_expand(&*prk, pq_labels::PQ_INITIATOR_MAC_INFO, &mut *init_mac_key)?;
         crypto::hmac_sha512(&*init_mac_key, &mac_input[..off], &mut ke3.initiator_mac)?;
@@ -242,7 +261,7 @@ pub fn generate_ke3(
         state.responder_public_key = *recovered_rpk;
         state.initiator_private_key = *recovered_isk;
         state.initiator_public_key = *recovered_ipk;
-        state.master_key = *master_key;
+        state.export_key = *export_key;
         state.session_key = *session_key;
 
         state.refresh_deadline();
@@ -262,7 +281,7 @@ pub fn generate_ke3(
 pub fn initiator_finish(
     state: &mut InitiatorState,
     session_key: &mut [u8; HASH_LENGTH],
-    master_key: &mut [u8; MASTER_KEY_LENGTH],
+    export_key: &mut [u8; EXPORT_KEY_LENGTH],
 ) -> OpaqueResult<()> {
     if state.phase != InitiatorPhase::Ke3Generated {
         return Err(OpaqueError::ValidationError);
@@ -273,9 +292,9 @@ pub fn initiator_finish(
     }
 
     session_key.copy_from_slice(&state.session_key);
-    master_key.copy_from_slice(&state.master_key);
+    export_key.copy_from_slice(&state.export_key);
     state.session_key.zeroize();
-    state.master_key.zeroize();
+    state.export_key.zeroize();
 
     state.pq_shared_secret.zeroize();
     state.pq_ephemeral_secret_key.zeroize();
@@ -442,14 +461,7 @@ mod tests {
         protocol::write_ke3(&ke3.initiator_mac, &mut ke3_bytes).unwrap();
 
         let mut session_key = [0u8; HASH_LENGTH];
-        let mut master_key = [0u8; MASTER_KEY_LENGTH];
-        opaque_relay::responder_finish(
-            &ke3_bytes,
-            &mut server_state,
-            &mut session_key,
-            &mut master_key,
-        )
-        .unwrap();
+        opaque_relay::responder_finish(&ke3_bytes, &mut server_state, &mut session_key).unwrap();
 
         assert_eq!(client_state.phase, InitiatorPhase::Ke3Generated);
         assert!(!is_all_zero(&client_state.session_key));

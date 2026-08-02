@@ -99,7 +99,7 @@ fn ffi_relay_preserves_unsupported_version_error_code() {
 
         let account_id = b"alice@example.com";
         let mut ke1 = vec![0u8; KE1_LENGTH];
-        ke1[0] = 0x02;
+        ke1[0] = 0x01;
         let mut ke2 = vec![0u8; KE2_LENGTH];
 
         let rc = opaque_relay_generate_ke2(
@@ -218,7 +218,7 @@ fn ffi_agent_preserves_unsupported_version_error_code() {
         );
 
         let mut ke2 = vec![0u8; KE2_LENGTH];
-        ke2[0] = 0x02;
+        ke2[0] = 0x01;
         let mut ke3 = vec![0u8; KE3_LENGTH];
 
         let rc = opaque_agent_generate_ke3(

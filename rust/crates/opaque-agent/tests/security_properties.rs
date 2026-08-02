@@ -50,9 +50,8 @@ fn authenticate(
     record_bytes: &[u8],
 ) -> (
     [u8; HASH_LENGTH],
-    [u8; MASTER_KEY_LENGTH],
+    [u8; EXPORT_KEY_LENGTH],
     [u8; HASH_LENGTH],
-    [u8; MASTER_KEY_LENGTH],
 ) {
     let initiator = OpaqueInitiator::new(responder.public_key()).unwrap();
     let mut client_state = InitiatorState::new();
@@ -102,14 +101,13 @@ fn authenticate(
     protocol::write_ke3(&ke3.initiator_mac, &mut ke3_bytes).unwrap();
 
     let mut s_sk = [0u8; HASH_LENGTH];
-    let mut s_mk = [0u8; MASTER_KEY_LENGTH];
-    responder_finish(&ke3_bytes, &mut server_state, &mut s_sk, &mut s_mk).unwrap();
+    responder_finish(&ke3_bytes, &mut server_state, &mut s_sk).unwrap();
 
     let mut c_sk = [0u8; HASH_LENGTH];
-    let mut c_mk = [0u8; MASTER_KEY_LENGTH];
+    let mut c_mk = [0u8; EXPORT_KEY_LENGTH];
     initiator_finish(&mut client_state, &mut c_sk, &mut c_mk).unwrap();
 
-    (c_sk, c_mk, s_sk, s_mk)
+    (c_sk, c_mk, s_sk)
 }
 
 struct InterceptedSession {
@@ -206,11 +204,10 @@ fn intercepted_authenticate(
     protocol::write_ke3(&ke3.initiator_mac, &mut ke3_bytes).unwrap();
 
     let mut s_sk = [0u8; HASH_LENGTH];
-    let mut s_mk = [0u8; MASTER_KEY_LENGTH];
-    responder_finish(&ke3_bytes, &mut server_state, &mut s_sk, &mut s_mk).unwrap();
+    responder_finish(&ke3_bytes, &mut server_state, &mut s_sk).unwrap();
 
     let mut c_sk = [0u8; HASH_LENGTH];
-    let mut c_mk = [0u8; MASTER_KEY_LENGTH];
+    let mut c_mk = [0u8; EXPORT_KEY_LENGTH];
     initiator_finish(&mut client_state, &mut c_sk, &mut c_mk).unwrap();
 
     InterceptedSession {
@@ -307,13 +304,12 @@ mod p1_session_key_secrecy {
     #[test]
     fn session_keys_match_and_nonzero() {
         let (responder, record) = setup();
-        let (c_sk, c_mk, s_sk, s_mk) = authenticate(PASSWORD, &responder, &record);
+        let (c_sk, export_key, s_sk) = authenticate(PASSWORD, &responder, &record);
 
         assert_eq!(c_sk, s_sk, "session keys must match");
-        assert_eq!(c_mk, s_mk, "master keys must match");
         assert_eq!(c_sk.len(), HASH_LENGTH);
         assert!(!c_sk.iter().all(|&b| b == 0));
-        assert!(!c_mk.iter().all(|&b| b == 0));
+        assert!(!export_key.iter().all(|&b| b == 0));
     }
 
     #[test]
@@ -332,8 +328,8 @@ mod p1_session_key_secrecy {
     #[test]
     fn different_sessions_independent_keys() {
         let (responder, record) = setup();
-        let (sk1, _, _, _) = authenticate(PASSWORD, &responder, &record);
-        let (sk2, _, _, _) = authenticate(PASSWORD, &responder, &record);
+        let (sk1, _, _) = authenticate(PASSWORD, &responder, &record);
+        let (sk2, _, _) = authenticate(PASSWORD, &responder, &record);
         assert_ne!(sk1, sk2, "different sessions must produce different keys");
     }
 
@@ -342,7 +338,7 @@ mod p1_session_key_secrecy {
         let (responder, record) = setup();
         let mut keys = std::collections::HashSet::new();
         for _ in 0..10 {
-            let (sk, _, _, _) = authenticate(PASSWORD, &responder, &record);
+            let (sk, _, _) = authenticate(PASSWORD, &responder, &record);
             keys.insert(sk);
         }
         assert_eq!(keys.len(), 10, "all 10 session keys must be unique");
@@ -944,9 +940,8 @@ mod p5_mutual_authentication {
         crypto::random_bytes(&mut fake_ke3).unwrap();
 
         let mut s_sk = [0u8; HASH_LENGTH];
-        let mut s_mk = [0u8; MASTER_KEY_LENGTH];
         assert!(
-            responder_finish(&fake_ke3, &mut server_state, &mut s_sk, &mut s_mk).is_err(),
+            responder_finish(&fake_ke3, &mut server_state, &mut s_sk).is_err(),
             "forged KE3 must be rejected"
         );
     }
@@ -1004,9 +999,8 @@ mod p5_mutual_authentication {
         protocol::write_ke3(&ke3.initiator_mac, &mut ke3_bytes).unwrap();
 
         let mut s_sk = [0u8; HASH_LENGTH];
-        let mut s_mk = [0u8; MASTER_KEY_LENGTH];
         assert!(
-            responder_finish(&ke3_bytes, &mut server_state, &mut s_sk, &mut s_mk).is_err(),
+            responder_finish(&ke3_bytes, &mut server_state, &mut s_sk).is_err(),
             "tampered KE3 MAC must be rejected"
         );
     }
@@ -1073,7 +1067,7 @@ mod p5_mutual_authentication {
         let (responder, record) = setup();
         let mut keys = std::collections::HashSet::new();
         for _ in 0..5 {
-            let (sk, _, _, _) = authenticate(PASSWORD, &responder, &record);
+            let (sk, _, _) = authenticate(PASSWORD, &responder, &record);
             assert!(keys.insert(sk), "each session must produce a unique key");
         }
     }
@@ -1256,7 +1250,7 @@ mod p7_offline_dictionary_resistance {
         let responder = OpaqueResponder::generate().unwrap();
         let record = register(PASSWORD, &responder);
 
-        let (c_sk, _, s_sk, _) = authenticate(PASSWORD, &responder, &record);
+        let (c_sk, _, s_sk) = authenticate(PASSWORD, &responder, &record);
         assert_eq!(c_sk, s_sk, "correct password must succeed");
     }
 

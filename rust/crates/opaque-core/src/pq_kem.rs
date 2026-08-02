@@ -22,7 +22,7 @@ pub fn keypair_generate(public_key: &mut [u8], secret_key: &mut [u8]) -> OpaqueR
         return Err(OpaqueError::InvalidKemInput);
     }
 
-    let mut rng = rand::rngs::OsRng;
+    let mut rng = rand_core::OsRng;
     let (dk, ek) = MlKem768::generate(&mut rng);
 
     public_key.copy_from_slice(ek.as_bytes().as_ref());
@@ -56,7 +56,7 @@ pub fn encapsulate(
         return Err(OpaqueError::InvalidKemInput);
     }
 
-    let mut rng = rand::rngs::OsRng;
+    let mut rng = rand_core::OsRng;
     let (ct, ss) = ek
         .encapsulate(&mut rng)
         .map_err(|_| OpaqueError::CryptoError)?;
