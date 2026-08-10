@@ -1,5 +1,8 @@
 # Rust
 rust/target/
+rust/fuzz/target/
+rust/fuzz/corpus/
+rust/fuzz/artifacts/
 
 # Build
 build*/
