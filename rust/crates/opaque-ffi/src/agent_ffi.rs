@@ -1064,12 +1064,14 @@ mod tests {
         // SAFETY: helpers return live test-owned handles.
         let (mut first_agent, mut first_state) = unsafe { create_agent_and_state() };
         let (mut second_agent, mut second_state) = unsafe { create_agent_and_state() };
-        let first_agent_address = first_agent.addr();
+        let shared_first_agent =
+            std::sync::Arc::new(std::sync::atomic::AtomicPtr::new(first_agent));
+        let holder_agent = std::sync::Arc::clone(&shared_first_agent);
         let (entered_tx, entered_rx) = std::sync::mpsc::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();
 
         let holder = std::thread::spawn(move || {
-            let handle = first_agent_address as *mut std::ffi::c_void;
+            let handle = holder_agent.load(Ordering::Acquire);
             let (_agent, guard) = acquire_agent(handle).expect("live handle admission");
             entered_tx.send(()).expect("entry notification");
             release_rx.recv().expect("release notification");
