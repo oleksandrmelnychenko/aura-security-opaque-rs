@@ -825,7 +825,8 @@ pub unsafe extern "C" fn opaque_relay_build_credentials(
 /// - `ke1_data` must point to at least `KE1_LENGTH` readable bytes.
 /// - `account_id` must point to at least `account_id_length` readable bytes (non-zero).
 /// - `credentials_data` must point to at least `RESPONDER_CREDENTIALS_LENGTH` readable bytes
-///   when `credentials_length != 0`. Pass `NULL, 0` to execute the unknown-user fake-credential path.
+///   when `credentials_length != 0`. With zero length the pointer is ignored; `NULL, 0` is
+///   the canonical spelling for the unknown-user fake-credential path.
 /// - `ke2_data` must point to a writable buffer of at least `KE2_LENGTH` bytes.
 /// - `state_handle` must be a valid pointer to a `RelayStateHandle` from
 ///   `opaque_relay_state_create`.

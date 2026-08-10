@@ -11,6 +11,8 @@ extern "C" {
  * Handles are caller-owned. Destroy them with the matching destroy function.
  * Competing operations on one live handle return OPAQUE_ERROR_BUSY. The caller
  * must externally synchronize destruction against every use and copied alias.
+ * A BUSY result from try_destroy is diagnostic only; it does not authorize a
+ * caller to race destruction against a current or future copied-alias use.
  * See opaque_common.h for the complete pointer, overlap, commit, and failure
  * contract.
  */
