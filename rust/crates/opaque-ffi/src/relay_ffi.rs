@@ -120,6 +120,14 @@ struct RelayHandle {
 impl Drop for RelayHandle {
     fn drop(&mut self) {
         self.responder.zeroize();
+        #[cfg(test)]
+        crate::record_disposal_observation(
+            "RelayHandle",
+            vec![(
+                "static_private_key",
+                opaque_core::types::is_all_zero(&self.responder.keypair().private_key),
+            )],
+        );
     }
 }
 
@@ -131,6 +139,32 @@ struct RelayStateHandle {
 impl Drop for RelayStateHandle {
     fn drop(&mut self) {
         self.state.zeroize();
+        #[cfg(test)]
+        crate::record_disposal_observation(
+            "RelayStateHandle",
+            vec![
+                (
+                    "responder_private_key",
+                    opaque_core::types::is_all_zero(self.state.responder_private_key()),
+                ),
+                (
+                    "responder_ephemeral_private_key",
+                    opaque_core::types::is_all_zero(self.state.responder_ephemeral_private_key()),
+                ),
+                (
+                    "session_key",
+                    opaque_core::types::is_all_zero(self.state.session_key()),
+                ),
+                (
+                    "expected_initiator_mac",
+                    opaque_core::types::is_all_zero(self.state.expected_initiator_mac()),
+                ),
+                (
+                    "pq_shared_secret",
+                    opaque_core::types::is_all_zero(self.state.pq_shared_secret()),
+                ),
+            ],
+        );
     }
 }
 
@@ -144,6 +178,20 @@ impl Drop for RelayKeypairHandle {
     fn drop(&mut self) {
         self.keypair.zeroize();
         self.oprf_seed.zeroize();
+        #[cfg(test)]
+        crate::record_disposal_observation(
+            "RelayKeypairHandle",
+            vec![
+                (
+                    "static_private_key",
+                    opaque_core::types::is_all_zero(&self.keypair.private_key),
+                ),
+                (
+                    "oprf_seed",
+                    opaque_core::types::is_all_zero(&self.oprf_seed),
+                ),
+            ],
+        );
     }
 }
 
@@ -1136,7 +1184,7 @@ mod tests {
         opaque_agent_create, opaque_agent_destroy, opaque_agent_generate_ke1,
         opaque_agent_generate_ke3, opaque_agent_state_create, opaque_agent_state_destroy,
     };
-    use crate::set_ffi_panic_point;
+    use crate::{set_ffi_panic_point, take_disposal_observations};
     use opaque_core::types::is_all_zero;
 
     #[test]
@@ -1336,6 +1384,92 @@ mod tests {
             opaque_relay_state_destroy(&mut relay_state);
             opaque_relay_destroy(&mut relay);
             opaque_relay_keypair_destroy(&mut keypair);
+        }
+    }
+
+    #[test]
+    fn destroy_observes_zeroized_populated_relay_storage() {
+        unsafe {
+            let mut keypair = ptr::null_mut();
+            assert_eq!(opaque_relay_keypair_generate(&mut keypair), 0);
+            let mut relay_public_key = [0u8; PUBLIC_KEY_LENGTH];
+            assert_eq!(
+                opaque_relay_keypair_get_public_key(
+                    keypair,
+                    relay_public_key.as_mut_ptr(),
+                    relay_public_key.len(),
+                ),
+                0
+            );
+            let mut relay = ptr::null_mut();
+            assert_eq!(opaque_relay_create(keypair, &mut relay), 0);
+
+            let mut agent = ptr::null_mut();
+            assert_eq!(
+                opaque_agent_create(
+                    relay_public_key.as_ptr(),
+                    relay_public_key.len(),
+                    &mut agent,
+                ),
+                0
+            );
+            let mut agent_state = ptr::null_mut();
+            assert_eq!(opaque_agent_state_create(&mut agent_state), 0);
+            let password = b"correct horse battery staple";
+            let account_id = b"alice@example.com";
+            let mut ke1 = [0u8; KE1_LENGTH];
+            assert_eq!(
+                opaque_agent_generate_ke1(
+                    agent,
+                    password.as_ptr(),
+                    password.len(),
+                    account_id.as_ptr(),
+                    account_id.len(),
+                    agent_state,
+                    ke1.as_mut_ptr(),
+                    ke1.len(),
+                ),
+                0
+            );
+
+            let mut relay_state = ptr::null_mut();
+            assert_eq!(opaque_relay_state_create(&mut relay_state), 0);
+            let mut ke2 = [0u8; KE2_LENGTH];
+            assert_eq!(
+                opaque_relay_generate_ke2(
+                    relay,
+                    ke1.as_ptr(),
+                    ke1.len(),
+                    account_id.as_ptr(),
+                    account_id.len(),
+                    ptr::null(),
+                    0,
+                    ke2.as_mut_ptr(),
+                    ke2.len(),
+                    relay_state,
+                ),
+                0
+            );
+            let state_ref = &*(relay_state as *const RelayStateHandle);
+            assert!(!is_all_zero(state_ref.state.responder_private_key()));
+            assert!(!is_all_zero(state_ref.state.session_key()));
+
+            opaque_agent_state_destroy(&mut agent_state);
+            opaque_agent_destroy(&mut agent);
+            take_disposal_observations();
+
+            opaque_relay_state_destroy(&mut relay_state);
+            opaque_relay_destroy(&mut relay);
+            opaque_relay_keypair_destroy(&mut keypair);
+            let observations = take_disposal_observations();
+
+            for object in ["RelayStateHandle", "RelayHandle", "RelayKeypairHandle"] {
+                let observation = observations
+                    .iter()
+                    .find(|item| item.object == object)
+                    .unwrap_or_else(|| panic!("missing disposal observation for {object}"));
+                assert!(observation.fields.iter().all(|(_, erased)| *erased));
+            }
         }
     }
 

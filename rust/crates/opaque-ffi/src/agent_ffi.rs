@@ -142,6 +142,28 @@ struct AgentStateHandle {
 impl Drop for AgentStateHandle {
     fn drop(&mut self) {
         self.state.zeroize();
+        #[cfg(test)]
+        crate::record_disposal_observation(
+            "AgentStateHandle",
+            vec![
+                (
+                    "initiator_private_key",
+                    opaque_core::types::is_all_zero(self.state.initiator_private_key()),
+                ),
+                (
+                    "initiator_ephemeral_private_key",
+                    opaque_core::types::is_all_zero(self.state.initiator_ephemeral_private_key()),
+                ),
+                (
+                    "pq_ephemeral_secret_key",
+                    opaque_core::types::is_all_zero(self.state.pq_ephemeral_secret_key()),
+                ),
+                (
+                    "pq_shared_secret",
+                    opaque_core::types::is_all_zero(self.state.pq_shared_secret()),
+                ),
+            ],
+        );
     }
 }
 
@@ -933,7 +955,7 @@ pub extern "C" fn opaque_get_kem_ciphertext_length() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::set_ffi_panic_point;
+    use crate::{set_ffi_panic_point, take_disposal_observations};
     use opaque_core::types::is_all_zero;
     use opaque_relay::OpaqueResponder;
 
@@ -1310,5 +1332,47 @@ mod tests {
             opaque_agent_state_destroy(&mut state);
             opaque_agent_destroy(&mut agent);
         }
+    }
+
+    #[test]
+    fn destroy_observes_zeroized_populated_agent_state_storage() {
+        // SAFETY: helper returns live test-owned handles.
+        let (mut agent, mut state) = unsafe { create_agent_and_state() };
+        let mut ke1 = [0u8; KE1_LENGTH];
+        // SAFETY: all arguments satisfy the public contract.
+        assert_eq!(
+            unsafe {
+                opaque_agent_generate_ke1(
+                    agent,
+                    PASSWORD.as_ptr(),
+                    PASSWORD.len(),
+                    ACCOUNT_ID.as_ptr(),
+                    ACCOUNT_ID.len(),
+                    state,
+                    ke1.as_mut_ptr(),
+                    ke1.len(),
+                )
+            },
+            0
+        );
+        // SAFETY: the state is live and quiescent before destruction.
+        let state_ref = unsafe { &*(state as *const AgentStateHandle) };
+        assert!(!is_all_zero(
+            state_ref.state.initiator_ephemeral_private_key()
+        ));
+        assert!(!is_all_zero(state_ref.state.pq_ephemeral_secret_key()));
+
+        take_disposal_observations();
+        // SAFETY: the state is live, quiescent, canonical, and test-owned.
+        unsafe { opaque_agent_state_destroy(&mut state) };
+        let observations = take_disposal_observations();
+        let observation = observations
+            .iter()
+            .find(|item| item.object == "AgentStateHandle")
+            .expect("agent state disposal observation");
+        assert!(observation.fields.iter().all(|(_, erased)| *erased));
+
+        // SAFETY: handle is live, quiescent, and test-owned.
+        unsafe { opaque_agent_destroy(&mut agent) };
     }
 }

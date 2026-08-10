@@ -128,6 +128,34 @@ pub(crate) fn inject_test_panic(point: &'static str) {
     });
 }
 
+#[cfg(test)]
+#[derive(Debug)]
+pub(crate) struct DisposalObservation {
+    pub object: &'static str,
+    pub fields: Vec<(&'static str, bool)>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static DISPOSAL_OBSERVATIONS: std::cell::RefCell<Vec<DisposalObservation>> = const {
+        std::cell::RefCell::new(Vec::new())
+    };
+}
+
+#[cfg(test)]
+pub(crate) fn record_disposal_observation(object: &'static str, fields: Vec<(&'static str, bool)>) {
+    DISPOSAL_OBSERVATIONS.with(|observations| {
+        observations
+            .borrow_mut()
+            .push(DisposalObservation { object, fields });
+    });
+}
+
+#[cfg(test)]
+pub(crate) fn take_disposal_observations() -> Vec<DisposalObservation> {
+    DISPOSAL_OBSERVATIONS.with(|observations| std::mem::take(&mut *observations.borrow_mut()))
+}
+
 #[cfg(not(test))]
 #[inline(always)]
 pub(crate) fn inject_test_panic(_: &'static str) {}
