@@ -955,6 +955,12 @@ pub extern "C" fn opaque_get_kem_ciphertext_length() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::relay_ffi::{
+        opaque_relay_build_credentials, opaque_relay_create,
+        opaque_relay_create_registration_response, opaque_relay_destroy, opaque_relay_generate_ke2,
+        opaque_relay_keypair_destroy, opaque_relay_keypair_generate,
+        opaque_relay_keypair_get_public_key, opaque_relay_state_create, opaque_relay_state_destroy,
+    };
     use crate::{set_ffi_panic_point, take_disposal_observations};
     use opaque_core::types::is_all_zero;
     use opaque_relay::OpaqueResponder;
@@ -1111,6 +1117,29 @@ mod tests {
         // SAFETY: helpers return live test-owned handles.
         let (mut first_agent, mut first_state) = unsafe { create_agent_and_state() };
         let (mut second_agent, mut second_state) = unsafe { create_agent_and_state() };
+        let mut first_ke1 = [0u8; KE1_LENGTH];
+        // SAFETY: all arguments satisfy the public contract and populate the first state.
+        assert_eq!(
+            unsafe {
+                opaque_agent_generate_ke1(
+                    first_agent,
+                    PASSWORD.as_ptr(),
+                    PASSWORD.len(),
+                    ACCOUNT_ID.as_ptr(),
+                    ACCOUNT_ID.len(),
+                    first_state,
+                    first_ke1.as_mut_ptr(),
+                    first_ke1.len(),
+                )
+            },
+            0
+        );
+        // SAFETY: the first state is live, quiescent, and test-owned.
+        let first_state_ref = unsafe { &*(first_state as *const AgentStateHandle) };
+        let private_before = *first_state_ref.state.initiator_ephemeral_private_key();
+        let pq_before = *first_state_ref.state.pq_ephemeral_secret_key();
+        assert!(!is_all_zero(&private_before));
+        assert!(!is_all_zero(&pq_before));
         let shared_first_agent =
             std::sync::Arc::new(std::sync::atomic::AtomicPtr::new(first_agent));
         let holder_agent = std::sync::Arc::clone(&shared_first_agent);
@@ -1162,7 +1191,18 @@ mod tests {
         assert!(independent_output.iter().any(|byte| *byte != 0));
         // SAFETY: first state was never admitted by the rejected call.
         let first_state_ref = unsafe { &*(first_state as *const AgentStateHandle) };
-        assert_eq!(first_state_ref.state.phase, InitiatorPhase::Created);
+        assert_eq!(first_state_ref.state.phase, InitiatorPhase::Ke1Generated);
+        assert_eq!(
+            first_state_ref.state.initiator_ephemeral_private_key(),
+            &private_before
+        );
+        assert_eq!(first_state_ref.state.pq_ephemeral_secret_key(), &pq_before);
+        println!(
+            "DISPOSAL_CELL scenario=busy_rejection object=AgentStateHandle field=initiator_ephemeral_private_key entry=populated exit=busy expected=P observed=preserved"
+        );
+        println!(
+            "DISPOSAL_CELL scenario=busy_rejection object=AgentStateHandle field=pq_ephemeral_secret_key entry=populated exit=busy expected=P observed=preserved"
+        );
 
         release_tx.send(()).expect("release holder");
         holder.join().expect("holder thread");
@@ -1351,10 +1391,11 @@ mod tests {
                 // SAFETY: helper returns live, test-owned handles for one matrix cell.
                 let (mut agent, mut state) = unsafe { create_agent_and_state() };
                 // SAFETY: this unit test owns the quiescent state and selects the matrix row.
+                let fixture_ke3_exported = matches!(operation, AgentStatefulOperation::Finish);
                 unsafe {
                     let state_ref = &mut *(state as *mut AgentStateHandle);
                     state_ref.state.phase = phase;
-                    state_ref.ke3_exported = matches!(operation, AgentStatefulOperation::Finish);
+                    state_ref.ke3_exported = fixture_ke3_exported;
                 }
                 let mut primary = [0xA5u8; KE2_LENGTH];
                 let mut secondary = [0xA5u8; EXPORT_KEY_LENGTH];
@@ -1422,7 +1463,7 @@ mod tests {
                 let state_ref = unsafe { &*(state as *const AgentStateHandle) };
                 assert_eq!(state_ref.state.phase, InitiatorPhase::Finished);
                 println!(
-                    "MATRIX_CELL side=agent phase={phase:?} operation={operation:?} relation=invalid_phase status={rc} output=unchanged post_phase=Finished fixture=phase_tag"
+                    "MATRIX_CELL side=agent phase={phase:?} operation={operation:?} relation=invalid_phase status={rc} output=unchanged post_phase=Finished fixture=phase_tag aux_ke3_exported={fixture_ke3_exported}"
                 );
                 executed += 1;
 
@@ -1439,38 +1480,159 @@ mod tests {
 
     #[test]
     fn caught_panic_terminalizes_state_and_preserves_output() {
-        // SAFETY: helper returns live test-owned handles.
-        let (mut agent, mut state) = unsafe { create_agent_and_state() };
-        let mut sentinel = [0xA5u8; KE1_LENGTH];
-        set_ffi_panic_point(Some("agent_generate_ke1_before_commit"));
-
-        // SAFETY: all arguments satisfy the public contract; panic is injected after serialization.
-        let rc = unsafe {
-            opaque_agent_generate_ke1(
-                agent,
-                PASSWORD.as_ptr(),
-                PASSWORD.len(),
-                ACCOUNT_ID.as_ptr(),
-                ACCOUNT_ID.len(),
-                state,
-                sentinel.as_mut_ptr(),
-                sentinel.len(),
-            )
-        };
-
-        assert_eq!(rc, FFI_PANIC);
-        assert!(sentinel.iter().all(|byte| *byte == 0xA5));
-        // SAFETY: state is live and quiescent.
-        let state_ref = unsafe { &*(state as *const AgentStateHandle) };
-        assert_eq!(state_ref.state.phase, InitiatorPhase::Finished);
-        assert!(is_all_zero(
-            state_ref.state.initiator_ephemeral_private_key()
-        ));
-        assert!(is_all_zero(state_ref.state.pq_ephemeral_secret_key()));
-        // SAFETY: handles are live, quiescent, and test-owned.
         unsafe {
+            let mut keypair = ptr::null_mut();
+            assert_eq!(opaque_relay_keypair_generate(&mut keypair), 0);
+            let mut relay_public_key = [0u8; PUBLIC_KEY_LENGTH];
+            assert_eq!(
+                opaque_relay_keypair_get_public_key(
+                    keypair,
+                    relay_public_key.as_mut_ptr(),
+                    relay_public_key.len(),
+                ),
+                0
+            );
+            let mut relay = ptr::null_mut();
+            assert_eq!(opaque_relay_create(keypair, &mut relay), 0);
+            let mut agent = ptr::null_mut();
+            assert_eq!(
+                opaque_agent_create(
+                    relay_public_key.as_ptr(),
+                    relay_public_key.len(),
+                    &mut agent,
+                ),
+                0
+            );
+
+            let mut registration_state = ptr::null_mut();
+            assert_eq!(opaque_agent_state_create(&mut registration_state), 0);
+            let mut registration_request = [0u8; REGISTRATION_REQUEST_WIRE_LENGTH];
+            assert_eq!(
+                opaque_agent_create_registration_request(
+                    agent,
+                    PASSWORD.as_ptr(),
+                    PASSWORD.len(),
+                    registration_state,
+                    registration_request.as_mut_ptr(),
+                    registration_request.len(),
+                ),
+                0
+            );
+            let mut registration_response = [0u8; REGISTRATION_RESPONSE_WIRE_LENGTH];
+            assert_eq!(
+                opaque_relay_create_registration_response(
+                    relay,
+                    registration_request.as_ptr(),
+                    registration_request.len(),
+                    ACCOUNT_ID.as_ptr(),
+                    ACCOUNT_ID.len(),
+                    registration_response.as_mut_ptr(),
+                    registration_response.len(),
+                ),
+                0
+            );
+            let mut registration_record = [0u8; REGISTRATION_RECORD_LENGTH];
+            assert_eq!(
+                opaque_agent_finalize_registration(
+                    agent,
+                    registration_response.as_ptr(),
+                    registration_response.len(),
+                    registration_state,
+                    registration_record.as_mut_ptr(),
+                    registration_record.len(),
+                ),
+                0
+            );
+            let mut credentials = [0u8; REGISTRATION_RECORD_LENGTH];
+            assert_eq!(
+                opaque_relay_build_credentials(
+                    registration_record.as_ptr(),
+                    registration_record.len(),
+                    credentials.as_mut_ptr(),
+                    credentials.len(),
+                ),
+                0
+            );
+            opaque_agent_state_destroy(&mut registration_state);
+
+            let mut state = ptr::null_mut();
+            let mut relay_state = ptr::null_mut();
+            assert_eq!(opaque_agent_state_create(&mut state), 0);
+            assert_eq!(opaque_relay_state_create(&mut relay_state), 0);
+            let mut ke1 = [0u8; KE1_LENGTH];
+            assert_eq!(
+                opaque_agent_generate_ke1(
+                    agent,
+                    PASSWORD.as_ptr(),
+                    PASSWORD.len(),
+                    ACCOUNT_ID.as_ptr(),
+                    ACCOUNT_ID.len(),
+                    state,
+                    ke1.as_mut_ptr(),
+                    ke1.len(),
+                ),
+                0
+            );
+            let mut ke2 = [0u8; KE2_LENGTH];
+            assert_eq!(
+                opaque_relay_generate_ke2(
+                    relay,
+                    ke1.as_ptr(),
+                    ke1.len(),
+                    ACCOUNT_ID.as_ptr(),
+                    ACCOUNT_ID.len(),
+                    credentials.as_ptr(),
+                    credentials.len(),
+                    ke2.as_mut_ptr(),
+                    ke2.len(),
+                    relay_state,
+                ),
+                0
+            );
+            let mut ke3 = [0u8; KE3_LENGTH];
+            assert_eq!(
+                opaque_agent_generate_ke3(
+                    agent,
+                    ke2.as_ptr(),
+                    ke2.len(),
+                    state,
+                    ke3.as_mut_ptr(),
+                    ke3.len(),
+                ),
+                0
+            );
+
+            let mut session_sentinel = [0xA5u8; HASH_LENGTH];
+            let mut export_sentinel = [0x5Au8; EXPORT_KEY_LENGTH];
+            set_ffi_panic_point(Some("agent_finish_before_commit"));
+            let rc = opaque_agent_finish(
+                agent,
+                state,
+                session_sentinel.as_mut_ptr(),
+                session_sentinel.len(),
+                export_sentinel.as_mut_ptr(),
+                export_sentinel.len(),
+            );
+
+            assert_eq!(rc, FFI_PANIC);
+            assert!(session_sentinel.iter().all(|byte| *byte == 0xA5));
+            assert!(export_sentinel.iter().all(|byte| *byte == 0x5A));
+            let state_ref = &*(state as *const AgentStateHandle);
+            assert_eq!(state_ref.state.phase, InitiatorPhase::Finished);
+            assert!(!state_ref.ke3_exported);
+            assert!(is_all_zero(
+                state_ref.state.initiator_ephemeral_private_key()
+            ));
+            assert!(is_all_zero(state_ref.state.pq_ephemeral_secret_key()));
+            println!(
+                "TUPLE_COMMIT_CELL operation=agent_finish injection=before_commit status={rc} session=unchanged export=unchanged post_phase=Finished ke3_exported=false"
+            );
+
             opaque_agent_state_destroy(&mut state);
+            opaque_relay_state_destroy(&mut relay_state);
             opaque_agent_destroy(&mut agent);
+            opaque_relay_destroy(&mut relay);
+            opaque_relay_keypair_destroy(&mut keypair);
         }
     }
 
@@ -1511,6 +1673,18 @@ mod tests {
             .find(|item| item.object == "AgentStateHandle")
             .expect("agent state disposal observation");
         assert!(observation.fields.iter().all(|(_, erased)| *erased));
+        for field in ["initiator_ephemeral_private_key", "pq_ephemeral_secret_key"] {
+            let erased = observation
+                .fields
+                .iter()
+                .find(|(name, _)| *name == field)
+                .map(|(_, erased)| *erased)
+                .expect("designated agent disposal field");
+            assert!(erased);
+            println!(
+                "DISPOSAL_CELL scenario=agent_state_destroy object=AgentStateHandle field={field} entry=populated exit=destroy expected=E observed=overwritten"
+            );
+        }
 
         // SAFETY: handle is live, quiescent, and test-owned.
         unsafe { opaque_agent_destroy(&mut agent) };

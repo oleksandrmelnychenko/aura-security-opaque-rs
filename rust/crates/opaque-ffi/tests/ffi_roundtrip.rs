@@ -160,7 +160,7 @@ fn ffi_agent_and_relay_roundtrip() {
             ),
             0
         );
-        println!("MATRIX_CELL side=agent phase=Created operation=RegistrationRequest relation=legal_transition status=0 output=committed post_phase=RegistrationRequested fixture=legal_prefix");
+        println!("MATRIX_CELL side=agent phase=Created operation=RegistrationRequest relation=legal_transition status=0 output=committed post_phase=RegistrationRequested fixture=legal_prefix aux_ke3_exported=false");
 
         let mut registration_response = vec![0u8; REGISTRATION_RESPONSE_LENGTH];
         assert_eq!(
@@ -188,7 +188,7 @@ fn ffi_agent_and_relay_roundtrip() {
             ),
             0
         );
-        println!("MATRIX_CELL side=agent phase=RegistrationRequested operation=FinalizeRegistration relation=legal_transition status=0 output=committed post_phase=RegistrationFinalized fixture=legal_prefix");
+        println!("MATRIX_CELL side=agent phase=RegistrationRequested operation=FinalizeRegistration relation=legal_transition status=0 output=committed post_phase=RegistrationFinalized fixture=legal_prefix aux_ke3_exported=false");
 
         let mut credentials = vec![0u8; REGISTRATION_RECORD_LENGTH];
         assert_eq!(
@@ -223,7 +223,7 @@ fn ffi_agent_and_relay_roundtrip() {
             ),
             0
         );
-        println!("MATRIX_CELL side=agent phase=Created operation=GenerateKe1 relation=legal_transition status=0 output=committed post_phase=Ke1Generated fixture=legal_prefix");
+        println!("MATRIX_CELL side=agent phase=Created operation=GenerateKe1 relation=legal_transition status=0 output=committed post_phase=Ke1Generated fixture=legal_prefix aux_ke3_exported=false");
 
         let mut ke2 = vec![0u8; KE2_LENGTH];
         assert_eq!(
@@ -241,7 +241,7 @@ fn ffi_agent_and_relay_roundtrip() {
             ),
             0
         );
-        println!("MATRIX_CELL side=relay phase=Created operation=GenerateKe2 relation=legal_transition status=0 output=committed post_phase=Ke2Generated fixture=legal_prefix");
+        println!("MATRIX_CELL side=relay phase=Created operation=GenerateKe2 relation=legal_transition status=0 output=committed post_phase=Ke2Generated fixture=legal_prefix aux_ke3_exported=na");
 
         let mut ke3 = vec![0u8; KE3_LENGTH];
         assert_eq!(
@@ -255,7 +255,7 @@ fn ffi_agent_and_relay_roundtrip() {
             ),
             0
         );
-        println!("MATRIX_CELL side=agent phase=Ke1Generated operation=GenerateKe3 relation=legal_transition status=0 output=committed post_phase=Ke3Generated fixture=legal_prefix");
+        println!("MATRIX_CELL side=agent phase=Ke1Generated operation=GenerateKe3 relation=legal_transition status=0 output=committed post_phase=Ke3Generated fixture=legal_prefix aux_ke3_exported=false");
 
         let mut relay_session_key = [0u8; SESSION_KEY_LENGTH];
         assert_eq!(
@@ -269,7 +269,7 @@ fn ffi_agent_and_relay_roundtrip() {
             ),
             0
         );
-        println!("MATRIX_CELL side=relay phase=Ke2Generated operation=Finish relation=legal_transition status=0 output=committed post_phase=Finished fixture=legal_prefix");
+        println!("MATRIX_CELL side=relay phase=Ke2Generated operation=Finish relation=legal_transition status=0 output=committed post_phase=Finished fixture=legal_prefix aux_ke3_exported=na");
 
         let mut agent_session_key = [0u8; SESSION_KEY_LENGTH];
         let mut agent_export_key = [0u8; EXPORT_KEY_LENGTH];
@@ -284,7 +284,7 @@ fn ffi_agent_and_relay_roundtrip() {
             ),
             0
         );
-        println!("MATRIX_CELL side=agent phase=Ke3Generated operation=Finish relation=legal_transition status=0 output=committed post_phase=Finished fixture=legal_prefix");
+        println!("MATRIX_CELL side=agent phase=Ke3Generated operation=Finish relation=legal_transition status=0 output=committed post_phase=Finished fixture=legal_prefix aux_ke3_exported=true");
 
         assert_eq!(agent_session_key, relay_session_key);
         assert!(!agent_export_key.iter().all(|byte| *byte == 0));

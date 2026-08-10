@@ -1392,7 +1392,7 @@ mod tests {
                     "Finish"
                 };
                 println!(
-                    "MATRIX_CELL side=relay phase={phase:?} operation={operation} relation=invalid_phase status={rc} output=unchanged post_phase=Finished fixture=phase_tag"
+                    "MATRIX_CELL side=relay phase={phase:?} operation={operation} relation=invalid_phase status={rc} output=unchanged post_phase=Finished fixture=phase_tag aux_ke3_exported=na"
                 );
                 executed += 1;
 
@@ -1557,6 +1557,11 @@ mod tests {
             let state_ref = &*(relay_state as *const RelayStateHandle);
             assert!(!is_all_zero(state_ref.state.responder_private_key()));
             assert!(!is_all_zero(state_ref.state.session_key()));
+            let relay_ref = &*(relay as *const RelayHandle);
+            assert!(!is_all_zero(&relay_ref.responder.keypair().private_key));
+            let keypair_ref = &*(keypair as *const RelayKeypairHandle);
+            assert!(!is_all_zero(&keypair_ref.keypair.private_key));
+            assert!(!is_all_zero(&keypair_ref.oprf_seed));
 
             opaque_agent_state_destroy(&mut agent_state);
             opaque_agent_destroy(&mut agent);
@@ -1573,6 +1578,29 @@ mod tests {
                     .find(|item| item.object == object)
                     .unwrap_or_else(|| panic!("missing disposal observation for {object}"));
                 assert!(observation.fields.iter().all(|(_, erased)| *erased));
+            }
+
+            for (object, field) in [
+                ("RelayStateHandle", "responder_private_key"),
+                ("RelayStateHandle", "session_key"),
+                ("RelayHandle", "static_private_key"),
+                ("RelayKeypairHandle", "static_private_key"),
+                ("RelayKeypairHandle", "oprf_seed"),
+            ] {
+                let observation = observations
+                    .iter()
+                    .find(|item| item.object == object)
+                    .unwrap_or_else(|| panic!("missing disposal observation for {object}"));
+                let erased = observation
+                    .fields
+                    .iter()
+                    .find(|(name, _)| *name == field)
+                    .map(|(_, erased)| *erased)
+                    .unwrap_or_else(|| panic!("missing disposal observation for {object}.{field}"));
+                assert!(erased);
+                println!(
+                    "DISPOSAL_CELL scenario=relay_object_destroy object={object} field={field} entry=populated exit=destroy expected=E observed=overwritten"
+                );
             }
         }
     }
