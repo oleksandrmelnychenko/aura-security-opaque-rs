@@ -1187,6 +1187,23 @@ mod tests {
     use crate::{set_ffi_panic_point, take_disposal_observations};
     use opaque_core::types::is_all_zero;
 
+    unsafe fn create_relay_and_state() -> (
+        *mut std::ffi::c_void,
+        *mut std::ffi::c_void,
+        *mut std::ffi::c_void,
+    ) {
+        let mut keypair = ptr::null_mut();
+        // SAFETY: test-owned output slot satisfies the public contract.
+        assert_eq!(unsafe { opaque_relay_keypair_generate(&mut keypair) }, 0);
+        let mut relay = ptr::null_mut();
+        // SAFETY: keypair is live and the output slot is test-owned.
+        assert_eq!(unsafe { opaque_relay_create(keypair, &mut relay) }, 0);
+        let mut state = ptr::null_mut();
+        // SAFETY: test-owned output slot satisfies the public contract.
+        assert_eq!(unsafe { opaque_relay_state_create(&mut state) }, 0);
+        (keypair, relay, state)
+    }
+
     #[test]
     fn relay_constructor_panic_leaves_out_slot_null() {
         let mut keypair = std::ptr::dangling_mut::<std::ffi::c_void>();
@@ -1302,6 +1319,81 @@ mod tests {
             opaque_relay_destroy(&mut relay);
             opaque_relay_keypair_destroy(&mut keypair);
         }
+    }
+
+    #[test]
+    fn invalid_relay_operation_state_matrix_terminalizes_without_commit() {
+        use opaque_relay::ResponderPhase;
+
+        let phases = [
+            ResponderPhase::Created,
+            ResponderPhase::Ke2Generated,
+            ResponderPhase::Finished,
+        ];
+        let account_id = b"alice@example.com";
+        let ke1 = [0u8; KE1_LENGTH];
+        let ke3 = [0u8; KE3_LENGTH];
+        let mut executed = 0usize;
+
+        for phase in phases {
+            for generate_ke2_cell in [true, false] {
+                let legal = matches!(
+                    (phase, generate_ke2_cell),
+                    (ResponderPhase::Created, true) | (ResponderPhase::Ke2Generated, false)
+                );
+                if legal {
+                    continue;
+                }
+                // SAFETY: helper returns live, test-owned handles for one matrix cell.
+                let (mut keypair, mut relay, mut state) = unsafe { create_relay_and_state() };
+                // SAFETY: this unit test owns the quiescent state and selects the matrix row.
+                unsafe { (*(state as *mut RelayStateHandle)).state.phase = phase };
+                let mut output = [0xA5u8; KE2_LENGTH];
+
+                // SAFETY: all descriptors are valid and disjoint; only the protocol phase is invalid.
+                let rc = unsafe {
+                    if generate_ke2_cell {
+                        opaque_relay_generate_ke2(
+                            relay,
+                            ke1.as_ptr(),
+                            ke1.len(),
+                            account_id.as_ptr(),
+                            account_id.len(),
+                            ptr::null(),
+                            0,
+                            output.as_mut_ptr(),
+                            output.len(),
+                            state,
+                        )
+                    } else {
+                        opaque_relay_finish(
+                            relay,
+                            ke3.as_ptr(),
+                            ke3.len(),
+                            state,
+                            output.as_mut_ptr(),
+                            output.len(),
+                        )
+                    }
+                };
+
+                assert_ne!(rc, 0, "unexpected success for {phase:?}");
+                assert!(output.iter().all(|byte| *byte == 0xA5));
+                // SAFETY: the admitted invalid-phase call leaves a live terminalized handle.
+                let state_ref = unsafe { &*(state as *const RelayStateHandle) };
+                assert_eq!(state_ref.state.phase, ResponderPhase::Finished);
+                executed += 1;
+
+                // SAFETY: handles are live, quiescent, canonical, and test-owned.
+                unsafe {
+                    opaque_relay_state_destroy(&mut state);
+                    opaque_relay_destroy(&mut relay);
+                    opaque_relay_keypair_destroy(&mut keypair);
+                }
+            }
+        }
+
+        assert_eq!(executed, 4);
     }
 
     #[test]

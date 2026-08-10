@@ -982,6 +982,31 @@ mod tests {
         (agent, state)
     }
 
+    #[derive(Clone, Copy, Debug)]
+    enum AgentStatefulOperation {
+        RegistrationRequest,
+        FinalizeRegistration,
+        GenerateKe1,
+        GenerateKe3,
+        Finish,
+    }
+
+    fn is_legal_agent_cell(phase: InitiatorPhase, operation: AgentStatefulOperation) -> bool {
+        matches!(
+            (phase, operation),
+            (
+                InitiatorPhase::Created,
+                AgentStatefulOperation::RegistrationRequest | AgentStatefulOperation::GenerateKe1
+            ) | (
+                InitiatorPhase::RegistrationRequested,
+                AgentStatefulOperation::FinalizeRegistration
+            ) | (
+                InitiatorPhase::Ke1Generated,
+                AgentStatefulOperation::GenerateKe3
+            ) | (InitiatorPhase::Ke3Generated, AgentStatefulOperation::Finish)
+        )
+    }
+
     #[test]
     fn constructor_failure_nulls_non_null_sentinel() {
         let invalid_key = [0u8; PUBLIC_KEY_LENGTH];
@@ -1295,6 +1320,114 @@ mod tests {
             opaque_agent_state_destroy(&mut state);
             opaque_agent_destroy(&mut agent);
         }
+    }
+
+    #[test]
+    fn invalid_agent_operation_state_matrix_terminalizes_without_commit() {
+        let phases = [
+            InitiatorPhase::Created,
+            InitiatorPhase::RegistrationRequested,
+            InitiatorPhase::RegistrationFinalized,
+            InitiatorPhase::Ke1Generated,
+            InitiatorPhase::Ke3Generated,
+            InitiatorPhase::Finished,
+        ];
+        let operations = [
+            AgentStatefulOperation::RegistrationRequest,
+            AgentStatefulOperation::FinalizeRegistration,
+            AgentStatefulOperation::GenerateKe1,
+            AgentStatefulOperation::GenerateKe3,
+            AgentStatefulOperation::Finish,
+        ];
+        let response = [0u8; REGISTRATION_RESPONSE_WIRE_LENGTH];
+        let ke2 = [0u8; KE2_LENGTH];
+        let mut executed = 0usize;
+
+        for phase in phases {
+            for operation in operations {
+                if is_legal_agent_cell(phase, operation) {
+                    continue;
+                }
+                // SAFETY: helper returns live, test-owned handles for one matrix cell.
+                let (mut agent, mut state) = unsafe { create_agent_and_state() };
+                // SAFETY: this unit test owns the quiescent state and selects the matrix row.
+                unsafe {
+                    let state_ref = &mut *(state as *mut AgentStateHandle);
+                    state_ref.state.phase = phase;
+                    state_ref.ke3_exported = matches!(operation, AgentStatefulOperation::Finish);
+                }
+                let mut primary = [0xA5u8; KE2_LENGTH];
+                let mut secondary = [0xA5u8; EXPORT_KEY_LENGTH];
+
+                // SAFETY: all descriptors are valid and disjoint; only the protocol phase is invalid.
+                let rc = unsafe {
+                    match operation {
+                        AgentStatefulOperation::RegistrationRequest => {
+                            opaque_agent_create_registration_request(
+                                agent,
+                                PASSWORD.as_ptr(),
+                                PASSWORD.len(),
+                                state,
+                                primary.as_mut_ptr(),
+                                primary.len(),
+                            )
+                        }
+                        AgentStatefulOperation::FinalizeRegistration => {
+                            opaque_agent_finalize_registration(
+                                agent,
+                                response.as_ptr(),
+                                response.len(),
+                                state,
+                                primary.as_mut_ptr(),
+                                primary.len(),
+                            )
+                        }
+                        AgentStatefulOperation::GenerateKe1 => opaque_agent_generate_ke1(
+                            agent,
+                            PASSWORD.as_ptr(),
+                            PASSWORD.len(),
+                            ACCOUNT_ID.as_ptr(),
+                            ACCOUNT_ID.len(),
+                            state,
+                            primary.as_mut_ptr(),
+                            primary.len(),
+                        ),
+                        AgentStatefulOperation::GenerateKe3 => opaque_agent_generate_ke3(
+                            agent,
+                            ke2.as_ptr(),
+                            ke2.len(),
+                            state,
+                            primary.as_mut_ptr(),
+                            primary.len(),
+                        ),
+                        AgentStatefulOperation::Finish => opaque_agent_finish(
+                            agent,
+                            state,
+                            primary.as_mut_ptr(),
+                            primary.len(),
+                            secondary.as_mut_ptr(),
+                            secondary.len(),
+                        ),
+                    }
+                };
+
+                assert_ne!(rc, 0, "unexpected success for {phase:?} × {operation:?}");
+                assert!(primary.iter().all(|byte| *byte == 0xA5));
+                assert!(secondary.iter().all(|byte| *byte == 0xA5));
+                // SAFETY: the admitted invalid-phase call leaves a live terminalized handle.
+                let state_ref = unsafe { &*(state as *const AgentStateHandle) };
+                assert_eq!(state_ref.state.phase, InitiatorPhase::Finished);
+                executed += 1;
+
+                // SAFETY: handles are live, quiescent, canonical, and test-owned.
+                unsafe {
+                    opaque_agent_state_destroy(&mut state);
+                    opaque_agent_destroy(&mut agent);
+                }
+            }
+        }
+
+        assert_eq!(executed, 25);
     }
 
     #[test]
