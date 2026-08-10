@@ -98,7 +98,7 @@ use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use opaque_agent::{
     create_registration_request, finalize_registration, generate_ke1, generate_ke3,
@@ -112,7 +112,9 @@ use opaque_core::types::{
     REGISTRATION_REQUEST_WIRE_LENGTH, REGISTRATION_RESPONSE_WIRE_LENGTH,
 };
 
-use crate::{ffi_error_to_int, result_to_int};
+use crate::{
+    ffi_error_to_int, handle_access_to_int, inject_test_panic, ranges_overlap, HandleAccessError,
+};
 
 const FFI_PANIC: i32 = -99;
 
@@ -153,38 +155,65 @@ impl Drop for BusyGuard<'_> {
 
 fn acquire_agent(
     handle: *mut std::ffi::c_void,
-) -> Option<(&'static AgentHandle, BusyGuard<'static>)> {
+) -> Result<(&'static AgentHandle, BusyGuard<'static>), HandleAccessError> {
     if handle.is_null() {
-        return None;
+        return Err(HandleAccessError::InvalidHandle);
     }
     let ptr = handle as *const AgentHandle;
+    // SAFETY: the public contract requires a live AgentHandle created by this library.
     let in_use = unsafe { &(*ptr).in_use };
-    if in_use.swap(true, Ordering::Acquire) {
-        return None;
+    if in_use
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        return Err(HandleAccessError::Busy);
     }
     let guard = BusyGuard(in_use);
-    Some((unsafe { &*ptr }, guard))
+    // SAFETY: external lifetime synchronization keeps the allocation alive while the guard is held.
+    Ok((unsafe { &*ptr }, guard))
 }
 
 fn acquire_agent_state(
     handle: *mut std::ffi::c_void,
-) -> Option<(&'static mut AgentStateHandle, BusyGuard<'static>)> {
+) -> Result<(&'static mut AgentStateHandle, BusyGuard<'static>), HandleAccessError> {
     if handle.is_null() {
-        return None;
+        return Err(HandleAccessError::InvalidHandle);
     }
     let ptr = handle as *mut AgentStateHandle;
+    // SAFETY: the public contract requires a live AgentStateHandle created by this library.
     let in_use = unsafe { &*std::ptr::addr_of!((*ptr).in_use) };
-    if in_use.swap(true, Ordering::Acquire) {
-        return None;
+    if in_use
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        return Err(HandleAccessError::Busy);
     }
     let guard = BusyGuard(in_use);
-    Some((unsafe { &mut *ptr }, guard))
+    // SAFETY: admission is exclusive and external synchronization keeps the allocation alive.
+    Ok((unsafe { &mut *ptr }, guard))
 }
 
 fn invalidate_agent_state(state_handle: &mut AgentStateHandle) {
     state_handle.state.zeroize();
     state_handle.state.phase = InitiatorPhase::Finished;
     state_handle.ke3_exported = false;
+}
+
+fn run_agent_stateful(
+    state_handle: &mut AgentStateHandle,
+    operation: impl FnOnce(&mut AgentStateHandle) -> opaque_core::types::OpaqueResult<()>,
+) -> i32 {
+    match panic::catch_unwind(AssertUnwindSafe(|| operation(state_handle))) {
+        Ok(Ok(())) => 0,
+        Ok(Err(error)) => {
+            invalidate_agent_state(state_handle);
+            ffi_error_to_int(error)
+        }
+        Err(_) => {
+            invalidate_agent_state(state_handle);
+            FFI_PANIC
+        }
+    }
 }
 
 /// Initializes the OPAQUE library. Must be called once before any other function.
@@ -230,10 +259,25 @@ pub unsafe extern "C" fn opaque_agent_create(
     handle: *mut *mut std::ffi::c_void,
 ) -> i32 {
     panic::catch_unwind(AssertUnwindSafe(|| {
-        if relay_public_key.is_null() || key_length != PUBLIC_KEY_LENGTH || handle.is_null() {
+        if handle.is_null() {
             return OpaqueError::InvalidInput.to_c_int();
         }
-        let key = std::slice::from_raw_parts(relay_public_key, key_length);
+        // SAFETY: validated above; the caller contract requires a writable out slot.
+        unsafe { *handle = ptr::null_mut() };
+        if relay_public_key.is_null()
+            || key_length != PUBLIC_KEY_LENGTH
+            || ranges_overlap(
+                relay_public_key,
+                key_length,
+                handle.cast::<u8>(),
+                std::mem::size_of::<*mut std::ffi::c_void>(),
+            )
+        {
+            return OpaqueError::InvalidInput.to_c_int();
+        }
+        // SAFETY: pointer and exact readable extent are required by the public contract.
+        // SAFETY: pointer and exact readable extent are required by the public contract.
+        let key = unsafe { std::slice::from_raw_parts(relay_public_key, key_length) };
         let initiator = match OpaqueInitiator::new(key) {
             Ok(i) => i,
             Err(e) => return ffi_error_to_int(e),
@@ -242,6 +286,7 @@ pub unsafe extern "C" fn opaque_agent_create(
             initiator,
             in_use: AtomicBool::new(false),
         });
+        inject_test_panic("agent_create_before_publish");
         *handle = Box::into_raw(boxed) as *mut std::ffi::c_void;
         0
     }))
@@ -257,7 +302,8 @@ pub unsafe extern "C" fn opaque_agent_create(
 ///
 /// `handle_ptr` must be a valid, non-null pointer to a `*mut c_void` that was
 /// previously set by `opaque_agent_create`. After this call the inner pointer
-/// is set to null, preventing double-free.
+/// is set to null, preventing double-free. The caller must ensure that destruction does not
+/// overlap any operation through this handle or a copied alias.
 #[no_mangle]
 pub unsafe extern "C" fn opaque_agent_destroy(handle_ptr: *mut *mut std::ffi::c_void) {
     let _ = opaque_agent_try_destroy(handle_ptr);
@@ -280,11 +326,15 @@ pub unsafe extern "C" fn opaque_agent_try_destroy(handle_ptr: *mut *mut std::ffi
             return 0;
         }
         let in_use = &(*(handle as *const AgentHandle)).in_use;
-        if in_use.swap(true, Ordering::Acquire) {
+        if in_use
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
             return FFI_BUSY;
         }
         *handle_ptr = ptr::null_mut();
-        drop(Box::from_raw(handle as *mut AgentHandle));
+        // SAFETY: external quiescence and canonical-slot ownership are caller obligations.
+        drop(unsafe { Box::from_raw(handle as *mut AgentHandle) });
         0
     }))
     .unwrap_or(FFI_PANIC)
@@ -317,11 +367,14 @@ pub unsafe extern "C" fn opaque_agent_state_create(handle: *mut *mut std::ffi::c
         if handle.is_null() {
             return OpaqueError::InvalidInput.to_c_int();
         }
+        // SAFETY: validated above; the caller contract requires a writable out slot.
+        unsafe { *handle = ptr::null_mut() };
         let boxed = Box::new(AgentStateHandle {
             state: InitiatorState::new(),
             ke3_exported: false,
             in_use: AtomicBool::new(false),
         });
+        inject_test_panic("agent_state_create_before_publish");
         *handle = Box::into_raw(boxed) as *mut std::ffi::c_void;
         0
     }))
@@ -335,7 +388,8 @@ pub unsafe extern "C" fn opaque_agent_state_create(handle: *mut *mut std::ffi::c
 ///
 /// `handle_ptr` must be a valid, non-null pointer to a `*mut c_void` that was
 /// previously set by `opaque_agent_state_create`. After this call the inner
-/// pointer is set to null, preventing double-free.
+/// pointer is set to null, preventing double-free. The caller must ensure that destruction does
+/// not overlap any operation through this state handle or a copied alias.
 #[no_mangle]
 pub unsafe extern "C" fn opaque_agent_state_destroy(handle_ptr: *mut *mut std::ffi::c_void) {
     let _ = opaque_agent_state_try_destroy(handle_ptr);
@@ -360,11 +414,15 @@ pub unsafe extern "C" fn opaque_agent_state_try_destroy(
             return 0;
         }
         let in_use = &(*(handle as *const AgentStateHandle)).in_use;
-        if in_use.swap(true, Ordering::Acquire) {
+        if in_use
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
             return FFI_BUSY;
         }
         *handle_ptr = ptr::null_mut();
-        drop(Box::from_raw(handle as *mut AgentStateHandle));
+        // SAFETY: external quiescence and canonical-slot ownership are caller obligations.
+        drop(unsafe { Box::from_raw(handle as *mut AgentStateHandle) });
         0
     }))
     .unwrap_or(FFI_PANIC)
@@ -414,30 +472,47 @@ pub unsafe extern "C" fn opaque_agent_create_registration_request(
             1..=MAX_SECURE_KEY_LENGTH => secure_key_length,
             _ => return OpaqueError::InvalidInput.to_c_int(),
         };
-        if agent_handle.is_null()
-            || secure_key.is_null()
+        if secure_key.is_null()
             || request_out.is_null()
             || request_length < REGISTRATION_REQUEST_WIRE_LENGTH
+            || ranges_overlap(
+                secure_key,
+                secure_key_length,
+                request_out.cast_const(),
+                REGISTRATION_REQUEST_WIRE_LENGTH,
+            )
         {
             return OpaqueError::InvalidInput.to_c_int();
         }
 
-        let Some((sh, _sg)) = acquire_agent_state(state_handle) else {
-            return FFI_BUSY;
+        let (_ah, _ag) = match acquire_agent(agent_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
+        };
+        let (sh, _sg) = match acquire_agent_state(state_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
         };
 
-        let key = std::slice::from_raw_parts(secure_key, secure_key_length);
-        let mut request = RegistrationRequest::new();
+        run_agent_stateful(sh, |sh| {
+            // SAFETY: validated readable extent is part of the public ABI contract.
+            let key = unsafe { std::slice::from_raw_parts(secure_key, secure_key_length) };
+            let mut request = RegistrationRequest::new();
+            create_registration_request(key, &mut request, &mut sh.state)?;
 
-        let result = create_registration_request(key, &mut request, &mut sh.state);
-        if result.is_ok() {
-            let out = std::slice::from_raw_parts_mut(request_out, request_length);
-            if let Err(e) = protocol::write_registration_request(&request.data, out) {
-                invalidate_agent_state(sh);
-                return ffi_error_to_int(e);
-            }
-        }
-        result_to_int(result)
+            let mut wire = Zeroizing::new([0u8; REGISTRATION_REQUEST_WIRE_LENGTH]);
+            protocol::write_registration_request(&request.data, &mut *wire)?;
+            inject_test_panic("agent_registration_request_before_commit");
+            // SAFETY: output was validated as writable, sufficiently large, and disjoint.
+            unsafe {
+                ptr::copy_nonoverlapping(
+                    wire.as_ptr(),
+                    request_out,
+                    REGISTRATION_REQUEST_WIRE_LENGTH,
+                )
+            };
+            Ok(())
+        })
     }))
     .unwrap_or(FFI_PANIC)
 }
@@ -488,36 +563,44 @@ pub unsafe extern "C" fn opaque_agent_finalize_registration(
             || response_length != REGISTRATION_RESPONSE_WIRE_LENGTH
             || record_out.is_null()
             || record_length < REGISTRATION_RECORD_LENGTH
+            || ranges_overlap(
+                response,
+                response_length,
+                record_out.cast_const(),
+                REGISTRATION_RECORD_LENGTH,
+            )
         {
             return OpaqueError::InvalidInput.to_c_int();
         }
 
-        let Some((ah, _ag)) = acquire_agent(agent_handle) else {
-            return FFI_BUSY;
+        let (ah, _ag) = match acquire_agent(agent_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
         };
-        let Some((sh, _sg)) = acquire_agent_state(state_handle) else {
-            return FFI_BUSY;
+        let (sh, _sg) = match acquire_agent_state(state_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
         };
 
-        let resp = std::slice::from_raw_parts(response, response_length);
-        let mut record = RegistrationRecord::new();
+        run_agent_stateful(sh, |sh| {
+            // SAFETY: validated readable extent is part of the public ABI contract.
+            let resp = unsafe { std::slice::from_raw_parts(response, response_length) };
+            let mut record = RegistrationRecord::new();
+            finalize_registration(&ah.initiator, resp, &mut sh.state, &mut record)?;
 
-        let result = match finalize_registration(&ah.initiator, resp, &mut sh.state, &mut record) {
-            Ok(()) => {
-                let out = std::slice::from_raw_parts_mut(record_out, record_length);
-                let write_result = protocol::write_registration_record(
-                    &record.envelope,
-                    &record.initiator_public_key,
-                    out,
-                );
-                if write_result.is_err() {
-                    invalidate_agent_state(sh);
-                }
-                write_result
-            }
-            Err(e) => Err(e),
-        };
-        result_to_int(result)
+            let mut wire = Zeroizing::new([0u8; REGISTRATION_RECORD_LENGTH]);
+            protocol::write_registration_record(
+                &record.envelope,
+                &record.initiator_public_key,
+                &mut *wire,
+            )?;
+            inject_test_panic("agent_finalize_registration_before_commit");
+            // SAFETY: output was validated as writable, sufficiently large, and disjoint.
+            unsafe {
+                ptr::copy_nonoverlapping(wire.as_ptr(), record_out, REGISTRATION_RECORD_LENGTH)
+            };
+            Ok(())
+        })
     }))
     .unwrap_or(FFI_PANIC)
 }
@@ -574,43 +657,57 @@ pub unsafe extern "C" fn opaque_agent_generate_ke1(
             1..=MAX_SECURE_KEY_LENGTH => secure_key_length,
             _ => return OpaqueError::InvalidInput.to_c_int(),
         };
-        if agent_handle.is_null()
-            || secure_key.is_null()
+        if secure_key.is_null()
             || account_id.is_null()
             || account_id_length == 0
             || account_id_length > MAX_ACCOUNT_ID_LENGTH
             || ke1_out.is_null()
             || ke1_length < KE1_LENGTH
+            || ranges_overlap(
+                secure_key,
+                secure_key_length,
+                ke1_out.cast_const(),
+                KE1_LENGTH,
+            )
+            || ranges_overlap(
+                account_id,
+                account_id_length,
+                ke1_out.cast_const(),
+                KE1_LENGTH,
+            )
         {
             return OpaqueError::InvalidInput.to_c_int();
         }
 
-        let Some((sh, _sg)) = acquire_agent_state(state_handle) else {
-            return FFI_BUSY;
+        let (_ah, _ag) = match acquire_agent(agent_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
+        };
+        let (sh, _sg) = match acquire_agent_state(state_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
         };
 
-        let key = std::slice::from_raw_parts(secure_key, secure_key_length);
-        let account_id = std::slice::from_raw_parts(account_id, account_id_length);
-        let mut ke1 = Ke1Message::new();
+        run_agent_stateful(sh, |sh| {
+            // SAFETY: validated readable extents are part of the public ABI contract.
+            let key = unsafe { std::slice::from_raw_parts(secure_key, secure_key_length) };
+            let account_id = unsafe { std::slice::from_raw_parts(account_id, account_id_length) };
+            let mut ke1 = Ke1Message::new();
+            generate_ke1(key, account_id, &mut ke1, &mut sh.state)?;
 
-        let result = match generate_ke1(key, account_id, &mut ke1, &mut sh.state) {
-            Ok(()) => {
-                let out = std::slice::from_raw_parts_mut(ke1_out, ke1_length);
-                let write_result = protocol::write_ke1(
-                    &ke1.credential_request,
-                    &ke1.initiator_public_key,
-                    &ke1.initiator_nonce,
-                    &ke1.pq_ephemeral_public_key,
-                    out,
-                );
-                if write_result.is_err() {
-                    invalidate_agent_state(sh);
-                }
-                write_result
-            }
-            Err(e) => Err(e),
-        };
-        result_to_int(result)
+            let mut wire = Zeroizing::new([0u8; KE1_LENGTH]);
+            protocol::write_ke1(
+                &ke1.credential_request,
+                &ke1.initiator_public_key,
+                &ke1.initiator_nonce,
+                &ke1.pq_ephemeral_public_key,
+                &mut *wire,
+            )?;
+            inject_test_panic("agent_generate_ke1_before_commit");
+            // SAFETY: output was validated as writable, sufficiently large, and disjoint.
+            unsafe { ptr::copy_nonoverlapping(wire.as_ptr(), ke1_out, KE1_LENGTH) };
+            Ok(())
+        })
     }))
     .unwrap_or(FFI_PANIC)
 }
@@ -661,36 +758,39 @@ pub unsafe extern "C" fn opaque_agent_generate_ke3(
     ke3_length: usize,
 ) -> i32 {
     panic::catch_unwind(AssertUnwindSafe(|| {
-        if ke2.is_null() || ke2_length != KE2_LENGTH || ke3_out.is_null() || ke3_length < KE3_LENGTH
+        if ke2.is_null()
+            || ke2_length != KE2_LENGTH
+            || ke3_out.is_null()
+            || ke3_length < KE3_LENGTH
+            || ranges_overlap(ke2, ke2_length, ke3_out.cast_const(), KE3_LENGTH)
         {
             return OpaqueError::InvalidInput.to_c_int();
         }
 
-        let Some((ah, _ag)) = acquire_agent(agent_handle) else {
-            return FFI_BUSY;
+        let (ah, _ag) = match acquire_agent(agent_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
         };
-        let Some((sh, _sg)) = acquire_agent_state(state_handle) else {
-            return FFI_BUSY;
+        let (sh, _sg) = match acquire_agent_state(state_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
         };
 
-        let ke2 = std::slice::from_raw_parts(ke2, ke2_length);
-        let mut ke3 = Ke3Message::new();
-        sh.ke3_exported = false;
+        run_agent_stateful(sh, |sh| {
+            // SAFETY: validated readable extent is part of the public ABI contract.
+            let ke2 = unsafe { std::slice::from_raw_parts(ke2, ke2_length) };
+            let mut ke3 = Ke3Message::new();
+            sh.ke3_exported = false;
+            generate_ke3(&ah.initiator, ke2, &mut sh.state, &mut ke3)?;
 
-        let result = match generate_ke3(&ah.initiator, ke2, &mut sh.state, &mut ke3) {
-            Ok(()) => {
-                let out = std::slice::from_raw_parts_mut(ke3_out, ke3_length);
-                let write_result = protocol::write_ke3(&ke3.initiator_mac, out);
-                if write_result.is_ok() {
-                    sh.ke3_exported = true;
-                } else {
-                    invalidate_agent_state(sh);
-                }
-                write_result
-            }
-            Err(e) => Err(e),
-        };
-        result_to_int(result)
+            let mut wire = Zeroizing::new([0u8; KE3_LENGTH]);
+            protocol::write_ke3(&ke3.initiator_mac, &mut *wire)?;
+            inject_test_panic("agent_generate_ke3_before_commit");
+            // SAFETY: output was validated as writable, sufficiently large, and disjoint.
+            unsafe { ptr::copy_nonoverlapping(wire.as_ptr(), ke3_out, KE3_LENGTH) };
+            sh.ke3_exported = true;
+            Ok(())
+        })
     }))
     .unwrap_or(FFI_PANIC)
 }
@@ -730,7 +830,7 @@ pub unsafe extern "C" fn opaque_agent_generate_ke3(
 ///   bytes.
 #[no_mangle]
 pub unsafe extern "C" fn opaque_agent_finish(
-    _agent_handle: *mut std::ffi::c_void,
+    agent_handle: *mut std::ffi::c_void,
     state_handle: *mut std::ffi::c_void,
     session_key_out: *mut u8,
     session_key_length: usize,
@@ -742,32 +842,42 @@ pub unsafe extern "C" fn opaque_agent_finish(
             || session_key_length < HASH_LENGTH
             || export_key_out.is_null()
             || export_key_length < EXPORT_KEY_LENGTH
+            || ranges_overlap(
+                session_key_out.cast_const(),
+                HASH_LENGTH,
+                export_key_out.cast_const(),
+                EXPORT_KEY_LENGTH,
+            )
         {
             return OpaqueError::InvalidInput.to_c_int();
         }
 
-        let Some((sh, _sg)) = acquire_agent_state(state_handle) else {
-            return FFI_BUSY;
+        let (_ah, _ag) = match acquire_agent(agent_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
         };
-        if !sh.ke3_exported {
-            return ffi_error_to_int(OpaqueError::ValidationError);
-        }
+        let (sh, _sg) = match acquire_agent_state(state_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
+        };
 
-        let mut session_key = [0u8; HASH_LENGTH];
-        let mut export_key = [0u8; EXPORT_KEY_LENGTH];
+        run_agent_stateful(sh, |sh| {
+            if !sh.ke3_exported {
+                return Err(OpaqueError::ValidationError);
+            }
 
-        let rc = match initiator_finish(&mut sh.state, &mut session_key, &mut export_key) {
-            Ok(()) => {
+            let mut session_key = Zeroizing::new([0u8; HASH_LENGTH]);
+            let mut export_key = Zeroizing::new([0u8; EXPORT_KEY_LENGTH]);
+            initiator_finish(&mut sh.state, &mut session_key, &mut export_key)?;
+            inject_test_panic("agent_finish_before_commit");
+            // SAFETY: both outputs were validated as writable, sufficiently large, and disjoint.
+            unsafe {
                 ptr::copy_nonoverlapping(session_key.as_ptr(), session_key_out, HASH_LENGTH);
                 ptr::copy_nonoverlapping(export_key.as_ptr(), export_key_out, EXPORT_KEY_LENGTH);
-                0
             }
-            Err(e) => ffi_error_to_int(e),
-        };
-        session_key.zeroize();
-        export_key.zeroize();
-        sh.ke3_exported = false;
-        rc
+            sh.ke3_exported = false;
+            Ok(())
+        })
     }))
     .unwrap_or(FFI_PANIC)
 }
@@ -818,4 +928,385 @@ pub extern "C" fn opaque_get_kem_public_key_length() -> usize {
 #[no_mangle]
 pub extern "C" fn opaque_get_kem_ciphertext_length() -> usize {
     pq::KEM_CIPHERTEXT_LENGTH
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::set_ffi_panic_point;
+    use opaque_core::types::is_all_zero;
+    use opaque_relay::OpaqueResponder;
+
+    const PASSWORD: &[u8] = b"correct horse battery staple";
+    const ACCOUNT_ID: &[u8] = b"alice@example.com";
+
+    unsafe fn create_agent_and_state() -> (*mut std::ffi::c_void, *mut std::ffi::c_void) {
+        let responder = OpaqueResponder::generate().expect("responder generation");
+        let mut agent = ptr::null_mut();
+        // SAFETY: test-owned key and output slot satisfy the public contract.
+        assert_eq!(
+            unsafe {
+                opaque_agent_create(
+                    responder.public_key().as_ptr(),
+                    responder.public_key().len(),
+                    &mut agent,
+                )
+            },
+            0
+        );
+        let mut state = ptr::null_mut();
+        // SAFETY: test-owned output slot satisfies the public contract.
+        assert_eq!(unsafe { opaque_agent_state_create(&mut state) }, 0);
+        (agent, state)
+    }
+
+    #[test]
+    fn constructor_failure_nulls_non_null_sentinel() {
+        let invalid_key = [0u8; PUBLIC_KEY_LENGTH];
+        let mut agent = std::ptr::dangling_mut::<std::ffi::c_void>();
+
+        // SAFETY: the input and output allocations are valid; key contents are intentionally bad.
+        let rc =
+            unsafe { opaque_agent_create(invalid_key.as_ptr(), invalid_key.len(), &mut agent) };
+
+        assert_ne!(rc, 0);
+        assert!(agent.is_null());
+    }
+
+    #[test]
+    fn constructor_panic_leaves_out_slot_null() {
+        let responder = OpaqueResponder::generate().expect("responder generation");
+        let mut agent = std::ptr::dangling_mut::<std::ffi::c_void>();
+        set_ffi_panic_point(Some("agent_create_before_publish"));
+
+        // SAFETY: test-owned key and output slot satisfy the public contract.
+        let rc = unsafe {
+            opaque_agent_create(
+                responder.public_key().as_ptr(),
+                responder.public_key().len(),
+                &mut agent,
+            )
+        };
+
+        assert_eq!(rc, FFI_PANIC);
+        assert!(agent.is_null());
+    }
+
+    #[test]
+    fn state_constructor_panic_leaves_out_slot_null() {
+        let mut state = std::ptr::dangling_mut::<std::ffi::c_void>();
+        set_ffi_panic_point(Some("agent_state_create_before_publish"));
+
+        // SAFETY: the test-owned output slot satisfies the public contract.
+        let rc = unsafe { opaque_agent_state_create(&mut state) };
+
+        assert_eq!(rc, FFI_PANIC);
+        assert!(state.is_null());
+    }
+
+    #[test]
+    fn null_and_busy_handles_have_distinct_status_codes() {
+        // SAFETY: helper returns live test-owned handles.
+        let (mut agent, mut state) = unsafe { create_agent_and_state() };
+        let mut output = [0u8; KE1_LENGTH];
+
+        // SAFETY: this unit test owns the live handle and only simulates an admitted peer call.
+        unsafe {
+            (*(agent as *mut AgentHandle))
+                .in_use
+                .store(true, Ordering::Release)
+        };
+        // SAFETY: all byte ranges and the state handle are valid; the agent is deliberately busy.
+        let busy_rc = unsafe {
+            opaque_agent_generate_ke1(
+                agent,
+                PASSWORD.as_ptr(),
+                PASSWORD.len(),
+                ACCOUNT_ID.as_ptr(),
+                ACCOUNT_ID.len(),
+                state,
+                output.as_mut_ptr(),
+                output.len(),
+            )
+        };
+        // SAFETY: this unit test owns the handle and restores it before destruction.
+        unsafe {
+            (*(agent as *mut AgentHandle))
+                .in_use
+                .store(false, Ordering::Release)
+        };
+
+        // SAFETY: byte ranges are valid; the null agent is the tested input.
+        let null_rc = unsafe {
+            opaque_agent_generate_ke1(
+                ptr::null_mut(),
+                PASSWORD.as_ptr(),
+                PASSWORD.len(),
+                ACCOUNT_ID.as_ptr(),
+                ACCOUNT_ID.len(),
+                state,
+                output.as_mut_ptr(),
+                output.len(),
+            )
+        };
+
+        assert_eq!(busy_rc, FFI_BUSY);
+        assert_eq!(null_rc, OpaqueError::InvalidInput.to_c_int());
+        // SAFETY: handles are live, quiescent, and test-owned.
+        unsafe {
+            opaque_agent_state_destroy(&mut state);
+            opaque_agent_destroy(&mut agent);
+        }
+    }
+
+    #[test]
+    fn live_handle_admission_rejects_overlap_but_independent_handle_progresses() {
+        // SAFETY: helpers return live test-owned handles.
+        let (mut first_agent, mut first_state) = unsafe { create_agent_and_state() };
+        let (mut second_agent, mut second_state) = unsafe { create_agent_and_state() };
+        let first_agent_address = first_agent.addr();
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+
+        let holder = std::thread::spawn(move || {
+            let handle = first_agent_address as *mut std::ffi::c_void;
+            let (_agent, guard) = acquire_agent(handle).expect("live handle admission");
+            entered_tx.send(()).expect("entry notification");
+            release_rx.recv().expect("release notification");
+            drop(guard);
+        });
+        entered_rx.recv().expect("holder entered");
+
+        let mut blocked_output = [0xA5u8; KE1_LENGTH];
+        // SAFETY: byte ranges and state are valid; the first agent is deliberately admitted elsewhere.
+        let blocked_rc = unsafe {
+            opaque_agent_generate_ke1(
+                first_agent,
+                PASSWORD.as_ptr(),
+                PASSWORD.len(),
+                ACCOUNT_ID.as_ptr(),
+                ACCOUNT_ID.len(),
+                first_state,
+                blocked_output.as_mut_ptr(),
+                blocked_output.len(),
+            )
+        };
+
+        let mut independent_output = [0u8; KE1_LENGTH];
+        // SAFETY: all arguments for the independent handles satisfy the public contract.
+        let independent_rc = unsafe {
+            opaque_agent_generate_ke1(
+                second_agent,
+                PASSWORD.as_ptr(),
+                PASSWORD.len(),
+                ACCOUNT_ID.as_ptr(),
+                ACCOUNT_ID.len(),
+                second_state,
+                independent_output.as_mut_ptr(),
+                independent_output.len(),
+            )
+        };
+
+        assert_eq!(blocked_rc, FFI_BUSY);
+        assert!(blocked_output.iter().all(|byte| *byte == 0xA5));
+        assert_eq!(independent_rc, 0);
+        assert!(independent_output.iter().any(|byte| *byte != 0));
+        // SAFETY: first state was never admitted by the rejected call.
+        let first_state_ref = unsafe { &*(first_state as *const AgentStateHandle) };
+        assert_eq!(first_state_ref.state.phase, InitiatorPhase::Created);
+
+        release_tx.send(()).expect("release holder");
+        holder.join().expect("holder thread");
+        // SAFETY: handles are live, quiescent, and test-owned.
+        unsafe {
+            opaque_agent_state_destroy(&mut first_state);
+            opaque_agent_destroy(&mut first_agent);
+            opaque_agent_state_destroy(&mut second_state);
+            opaque_agent_destroy(&mut second_agent);
+        }
+    }
+
+    #[test]
+    fn detected_overlap_is_rejected_before_state_admission() {
+        // SAFETY: helper returns live test-owned handles.
+        let (mut agent, mut state) = unsafe { create_agent_and_state() };
+        let mut aliased = [0xA5u8; KE1_LENGTH];
+
+        // SAFETY: the allocation is live; intentional input/output overlap is detected before use.
+        let rc = unsafe {
+            opaque_agent_generate_ke1(
+                agent,
+                aliased.as_ptr(),
+                16,
+                ACCOUNT_ID.as_ptr(),
+                ACCOUNT_ID.len(),
+                state,
+                aliased.as_mut_ptr(),
+                aliased.len(),
+            )
+        };
+
+        assert_eq!(rc, OpaqueError::InvalidInput.to_c_int());
+        assert!(aliased.iter().all(|byte| *byte == 0xA5));
+        // SAFETY: state is live and quiescent.
+        let state_ref = unsafe { &*(state as *const AgentStateHandle) };
+        assert_eq!(state_ref.state.phase, InitiatorPhase::Created);
+        // SAFETY: handles are live, quiescent, and test-owned.
+        unsafe {
+            opaque_agent_state_destroy(&mut state);
+            opaque_agent_destroy(&mut agent);
+        }
+    }
+
+    #[test]
+    fn larger_output_capacity_preserves_uncommitted_suffix() {
+        // SAFETY: helper returns live test-owned handles.
+        let (mut agent, mut state) = unsafe { create_agent_and_state() };
+        let mut output = [0xA5u8; REGISTRATION_REQUEST_WIRE_LENGTH + 16];
+
+        // SAFETY: all arguments satisfy the public contract and output capacity is intentionally larger.
+        let rc = unsafe {
+            opaque_agent_create_registration_request(
+                agent,
+                PASSWORD.as_ptr(),
+                PASSWORD.len(),
+                state,
+                output.as_mut_ptr(),
+                output.len(),
+            )
+        };
+
+        assert_eq!(rc, 0);
+        assert!(output[..REGISTRATION_REQUEST_WIRE_LENGTH]
+            .iter()
+            .any(|byte| *byte != 0xA5));
+        assert!(output[REGISTRATION_REQUEST_WIRE_LENGTH..]
+            .iter()
+            .all(|byte| *byte == 0xA5));
+        // SAFETY: handles are live, quiescent, and test-owned.
+        unsafe {
+            opaque_agent_state_destroy(&mut state);
+            opaque_agent_destroy(&mut agent);
+        }
+    }
+
+    #[test]
+    fn overlapping_finish_outputs_are_rejected_before_state_admission() {
+        // SAFETY: helper returns live test-owned handles.
+        let (mut agent, mut state) = unsafe { create_agent_and_state() };
+        let mut output = [0xA5u8; HASH_LENGTH];
+
+        // SAFETY: the allocation is live; intentional output/output overlap is detected before use.
+        let rc = unsafe {
+            opaque_agent_finish(
+                agent,
+                state,
+                output.as_mut_ptr(),
+                output.len(),
+                output.as_mut_ptr(),
+                EXPORT_KEY_LENGTH,
+            )
+        };
+
+        assert_eq!(rc, OpaqueError::InvalidInput.to_c_int());
+        assert!(output.iter().all(|byte| *byte == 0xA5));
+        // SAFETY: state is live and quiescent.
+        let state_ref = unsafe { &*(state as *const AgentStateHandle) };
+        assert_eq!(state_ref.state.phase, InitiatorPhase::Created);
+        // SAFETY: handles are live, quiescent, and test-owned.
+        unsafe {
+            opaque_agent_state_destroy(&mut state);
+            opaque_agent_destroy(&mut agent);
+        }
+    }
+
+    #[test]
+    fn admitted_error_terminalizes_state_and_preserves_output() {
+        // SAFETY: helper returns live test-owned handles.
+        let (mut agent, mut state) = unsafe { create_agent_and_state() };
+        let mut first = [0u8; KE1_LENGTH];
+        // SAFETY: all arguments satisfy the public contract.
+        assert_eq!(
+            unsafe {
+                opaque_agent_generate_ke1(
+                    agent,
+                    PASSWORD.as_ptr(),
+                    PASSWORD.len(),
+                    ACCOUNT_ID.as_ptr(),
+                    ACCOUNT_ID.len(),
+                    state,
+                    first.as_mut_ptr(),
+                    first.len(),
+                )
+            },
+            0
+        );
+
+        let mut sentinel = [0xA5u8; KE1_LENGTH];
+        // SAFETY: all arguments satisfy the public contract; state reuse is the tested error.
+        let rc = unsafe {
+            opaque_agent_generate_ke1(
+                agent,
+                PASSWORD.as_ptr(),
+                PASSWORD.len(),
+                ACCOUNT_ID.as_ptr(),
+                ACCOUNT_ID.len(),
+                state,
+                sentinel.as_mut_ptr(),
+                sentinel.len(),
+            )
+        };
+
+        assert_eq!(rc, OpaqueError::ValidationError.to_c_int());
+        assert!(sentinel.iter().all(|byte| *byte == 0xA5));
+        // SAFETY: state is live and quiescent.
+        let state_ref = unsafe { &*(state as *const AgentStateHandle) };
+        assert_eq!(state_ref.state.phase, InitiatorPhase::Finished);
+        assert!(is_all_zero(
+            state_ref.state.initiator_ephemeral_private_key()
+        ));
+        assert!(is_all_zero(state_ref.state.pq_ephemeral_secret_key()));
+        // SAFETY: handles are live, quiescent, and test-owned.
+        unsafe {
+            opaque_agent_state_destroy(&mut state);
+            opaque_agent_destroy(&mut agent);
+        }
+    }
+
+    #[test]
+    fn caught_panic_terminalizes_state_and_preserves_output() {
+        // SAFETY: helper returns live test-owned handles.
+        let (mut agent, mut state) = unsafe { create_agent_and_state() };
+        let mut sentinel = [0xA5u8; KE1_LENGTH];
+        set_ffi_panic_point(Some("agent_generate_ke1_before_commit"));
+
+        // SAFETY: all arguments satisfy the public contract; panic is injected after serialization.
+        let rc = unsafe {
+            opaque_agent_generate_ke1(
+                agent,
+                PASSWORD.as_ptr(),
+                PASSWORD.len(),
+                ACCOUNT_ID.as_ptr(),
+                ACCOUNT_ID.len(),
+                state,
+                sentinel.as_mut_ptr(),
+                sentinel.len(),
+            )
+        };
+
+        assert_eq!(rc, FFI_PANIC);
+        assert!(sentinel.iter().all(|byte| *byte == 0xA5));
+        // SAFETY: state is live and quiescent.
+        let state_ref = unsafe { &*(state as *const AgentStateHandle) };
+        assert_eq!(state_ref.state.phase, InitiatorPhase::Finished);
+        assert!(is_all_zero(
+            state_ref.state.initiator_ephemeral_private_key()
+        ));
+        assert!(is_all_zero(state_ref.state.pq_ephemeral_secret_key()));
+        // SAFETY: handles are live, quiescent, and test-owned.
+        unsafe {
+            opaque_agent_state_destroy(&mut state);
+            opaque_agent_destroy(&mut agent);
+        }
+    }
 }

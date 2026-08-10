@@ -9,8 +9,10 @@ extern "C" {
  * Agent (client-side) API.
  *
  * Handles are caller-owned. Destroy them with the matching destroy function.
- * A single handle must not be used concurrently; concurrent calls return
- * OPAQUE_ERROR_BUSY.
+ * Competing operations on one live handle return OPAQUE_ERROR_BUSY. The caller
+ * must externally synchronize destruction against every use and copied alias.
+ * See opaque_common.h for the complete pointer, overlap, commit, and failure
+ * contract.
  */
 
 /* ── Handle management ───────────────────────────────────────────────────── */

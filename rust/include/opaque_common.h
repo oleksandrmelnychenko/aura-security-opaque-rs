@@ -51,6 +51,14 @@ typedef enum {
     OPAQUE_ERROR_CORRUPTED_RECORD    = -101
 } OpaqueErrorCode;
 
+/*
+ * Protocol-stage parse, validation, authentication, ML-KEM, and envelope
+ * failures are intentionally collapsed to OPAQUE_ERROR_AUTH_FAILED (-5) by
+ * current protocol entry points. The more specific -3, -4, -8, and -9 values
+ * remain reserved ABI diagnostics. OPAQUE_ERROR_UNSUPPORTED_VERSION (-10) is
+ * kept distinct because the version byte is public protocol metadata.
+ */
+
 /* ── Opaque handle types ─────────────────────────────────────────────────── */
 
 typedef struct OpaqueAgentHandle OpaqueAgentHandle;
@@ -58,6 +66,29 @@ typedef struct OpaqueAgentStateHandle OpaqueAgentStateHandle;
 typedef struct OpaqueRelayHandle OpaqueRelayHandle;
 typedef struct OpaqueRelayKeypairHandle OpaqueRelayKeypairHandle;
 typedef struct OpaqueRelayStateHandle OpaqueRelayStateHandle;
+
+/*
+ * C-ABI safety contract
+ * ---------------------
+ * Every non-null pointer must designate a live allocation of the documented
+ * type and extent. Fabricated, stale, wrong-type, misaligned, or undersized
+ * pointers violate the caller contract and are outside defined behavior.
+ *
+ * Readable input ranges and writable output ranges must not overlap. Multiple
+ * writable outputs of one call must be pairwise disjoint. Detectable overlap
+ * is rejected with OPAQUE_ERROR_INVALID_INPUT before protocol-state admission.
+ *
+ * Operations on the same live handle are serialized; a competing operation
+ * returns OPAQUE_ERROR_BUSY. Destruction requires external lifetime
+ * synchronization: it must not overlap any access through the same handle or
+ * a copied alias. The per-handle busy flag is not a reclamation mechanism.
+ *
+ * Constructors null a valid out-handle slot before fallible work and publish
+ * ownership only on success. Protocol byte outputs are committed only after
+ * the operation and exact-size serialization succeed. Errors before mutable
+ * state admission preserve the state; errors or panics after admission
+ * terminalize and zeroize that one-shot state. No Rust panic crosses this ABI.
+ */
 
 /* ── Library lifecycle ───────────────────────────────────────────────────── */
 

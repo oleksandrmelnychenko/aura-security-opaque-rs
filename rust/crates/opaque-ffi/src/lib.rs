@@ -51,13 +51,15 @@
 //!
 //! Each handle carries an atomic busy flag. A second call on the same handle while the first
 //! is still running returns `-100` (`FFI_BUSY`). Different handles can be used concurrently.
+//! Handle destruction requires external lifetime synchronization: a destroy call must not
+//! overlap an operation through the same handle or through a copied alias.
 
 mod agent_ffi;
 mod relay_ffi;
 
 use std::ffi::c_char;
 
-use opaque_core::types::{OpaqueError, OpaqueResult};
+use opaque_core::types::OpaqueError;
 
 static VERSION_STRING: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
@@ -65,12 +67,70 @@ pub(crate) fn ffi_error_to_int(error: OpaqueError) -> i32 {
     error.to_c_int()
 }
 
-pub(crate) fn result_to_int(r: OpaqueResult<()>) -> i32 {
-    match r {
-        Ok(()) => 0,
-        Err(e) => ffi_error_to_int(e),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HandleAccessError {
+    InvalidHandle,
+    Busy,
+}
+
+pub(crate) fn handle_access_to_int(error: HandleAccessError) -> i32 {
+    match error {
+        HandleAccessError::InvalidHandle => OpaqueError::InvalidInput.to_c_int(),
+        HandleAccessError::Busy => -100,
     }
 }
+
+/// Returns true when two non-empty byte ranges overlap or either end address overflows.
+///
+/// This is a public-argument validation aid, not a pointer-validity oracle. Callers must still
+/// supply live allocations with the documented extents.
+pub(crate) fn ranges_overlap(
+    left: *const u8,
+    left_len: usize,
+    right: *const u8,
+    right_len: usize,
+) -> bool {
+    if left_len == 0 || right_len == 0 {
+        return false;
+    }
+
+    let left_start = left.addr();
+    let right_start = right.addr();
+    let Some(left_end) = left_start.checked_add(left_len) else {
+        return true;
+    };
+    let Some(right_end) = right_start.checked_add(right_len) else {
+        return true;
+    };
+
+    left_start < right_end && right_start < left_end
+}
+
+#[cfg(test)]
+thread_local! {
+    static FFI_PANIC_POINT: std::cell::Cell<Option<&'static str>> = const {
+        std::cell::Cell::new(None)
+    };
+}
+
+#[cfg(test)]
+pub(crate) fn set_ffi_panic_point(point: Option<&'static str>) {
+    FFI_PANIC_POINT.with(|slot| slot.set(point));
+}
+
+#[cfg(test)]
+pub(crate) fn inject_test_panic(point: &'static str) {
+    FFI_PANIC_POINT.with(|slot| {
+        if slot.get() == Some(point) {
+            slot.set(None);
+            panic!("injected FFI panic at {point}");
+        }
+    });
+}
+
+#[cfg(not(test))]
+#[inline(always)]
+pub(crate) fn inject_test_panic(_: &'static str) {}
 
 #[no_mangle]
 pub extern "C" fn opaque_version() -> *const c_char {

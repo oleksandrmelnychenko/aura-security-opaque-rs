@@ -101,7 +101,9 @@ use opaque_relay::{
     OpaqueResponder, RegistrationResponse, ResponderCredentials, ResponderKeyPair, ResponderState,
 };
 
-use crate::{ffi_error_to_int, result_to_int};
+use crate::{
+    ffi_error_to_int, handle_access_to_int, inject_test_panic, ranges_overlap, HandleAccessError,
+};
 
 const FFI_PANIC: i32 = -99;
 
@@ -155,32 +157,42 @@ impl Drop for BusyGuard<'_> {
 
 fn acquire_relay(
     handle: *const std::ffi::c_void,
-) -> Option<(&'static RelayHandle, BusyGuard<'static>)> {
+) -> Result<(&'static RelayHandle, BusyGuard<'static>), HandleAccessError> {
     if handle.is_null() {
-        return None;
+        return Err(HandleAccessError::InvalidHandle);
     }
     let ptr = handle as *const RelayHandle;
+    // SAFETY: the public contract requires a live RelayHandle created by this library.
     let in_use = unsafe { &(*ptr).in_use };
-    if in_use.swap(true, Ordering::Acquire) {
-        return None;
+    if in_use
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        return Err(HandleAccessError::Busy);
     }
     let guard = BusyGuard(in_use);
-    Some((unsafe { &*ptr }, guard))
+    // SAFETY: external lifetime synchronization keeps the allocation alive while the guard is held.
+    Ok((unsafe { &*ptr }, guard))
 }
 
 fn acquire_relay_state(
     handle: *mut std::ffi::c_void,
-) -> Option<(&'static mut RelayStateHandle, BusyGuard<'static>)> {
+) -> Result<(&'static mut RelayStateHandle, BusyGuard<'static>), HandleAccessError> {
     if handle.is_null() {
-        return None;
+        return Err(HandleAccessError::InvalidHandle);
     }
     let ptr = handle as *mut RelayStateHandle;
+    // SAFETY: the public contract requires a live RelayStateHandle created by this library.
     let in_use = unsafe { &*std::ptr::addr_of!((*ptr).in_use) };
-    if in_use.swap(true, Ordering::Acquire) {
-        return None;
+    if in_use
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        return Err(HandleAccessError::Busy);
     }
     let guard = BusyGuard(in_use);
-    Some((unsafe { &mut *ptr }, guard))
+    // SAFETY: admission is exclusive and external synchronization keeps the allocation alive.
+    Ok((unsafe { &mut *ptr }, guard))
 }
 
 fn invalidate_relay_state(state_handle: &mut RelayStateHandle) {
@@ -189,17 +201,39 @@ fn invalidate_relay_state(state_handle: &mut RelayStateHandle) {
 
 fn acquire_relay_keypair(
     handle: *mut std::ffi::c_void,
-) -> Option<(&'static RelayKeypairHandle, BusyGuard<'static>)> {
+) -> Result<(&'static RelayKeypairHandle, BusyGuard<'static>), HandleAccessError> {
     if handle.is_null() {
-        return None;
+        return Err(HandleAccessError::InvalidHandle);
     }
     let ptr = handle as *const RelayKeypairHandle;
+    // SAFETY: the public contract requires a live RelayKeypairHandle created by this library.
     let in_use = unsafe { &(*ptr).in_use };
-    if in_use.swap(true, Ordering::Acquire) {
-        return None;
+    if in_use
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        return Err(HandleAccessError::Busy);
     }
     let guard = BusyGuard(in_use);
-    Some((unsafe { &*ptr }, guard))
+    // SAFETY: external lifetime synchronization keeps the allocation alive while the guard is held.
+    Ok((unsafe { &*ptr }, guard))
+}
+
+fn run_relay_stateful(
+    state_handle: &mut RelayStateHandle,
+    operation: impl FnOnce(&mut RelayStateHandle) -> opaque_core::types::OpaqueResult<()>,
+) -> i32 {
+    match panic::catch_unwind(AssertUnwindSafe(|| operation(state_handle))) {
+        Ok(Ok(())) => 0,
+        Ok(Err(error)) => {
+            invalidate_relay_state(state_handle);
+            ffi_error_to_int(error)
+        }
+        Err(_) => {
+            invalidate_relay_state(state_handle);
+            FFI_PANIC
+        }
+    }
 }
 
 /// Generates a fresh Ristretto255 keypair and a random 32-byte OPRF seed.
@@ -233,6 +267,8 @@ pub unsafe extern "C" fn opaque_relay_keypair_generate(handle: *mut *mut std::ff
         if handle.is_null() {
             return OpaqueError::InvalidInput.to_c_int();
         }
+        // SAFETY: validated above; the caller contract requires a writable out slot.
+        unsafe { *handle = ptr::null_mut() };
         let Ok(keypair) = ResponderKeyPair::generate() else {
             return ffi_error_to_int(OpaqueError::CryptoError);
         };
@@ -245,6 +281,7 @@ pub unsafe extern "C" fn opaque_relay_keypair_generate(handle: *mut *mut std::ff
             oprf_seed: *oprf_seed,
             in_use: AtomicBool::new(false),
         });
+        inject_test_panic("relay_keypair_generate_before_publish");
         *handle = Box::into_raw(boxed) as *mut std::ffi::c_void;
         0
     }))
@@ -257,7 +294,8 @@ pub unsafe extern "C" fn opaque_relay_keypair_generate(handle: *mut *mut std::ff
 ///
 /// `handle_ptr` must be a valid, non-null pointer to a `*mut c_void` that was
 /// previously set by `opaque_relay_keypair_generate`. After this call the inner
-/// pointer is set to null, preventing double-free.
+/// pointer is set to null, preventing double-free. The caller must ensure that destruction does
+/// not overlap any operation through this handle or a copied alias.
 #[no_mangle]
 pub unsafe extern "C" fn opaque_relay_keypair_destroy(handle_ptr: *mut *mut std::ffi::c_void) {
     let _ = opaque_relay_keypair_try_destroy(handle_ptr);
@@ -282,11 +320,15 @@ pub unsafe extern "C" fn opaque_relay_keypair_try_destroy(
             return 0;
         }
         let in_use = &(*(handle as *const RelayKeypairHandle)).in_use;
-        if in_use.swap(true, Ordering::Acquire) {
+        if in_use
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
             return FFI_BUSY;
         }
         *handle_ptr = ptr::null_mut();
-        drop(Box::from_raw(handle as *mut RelayKeypairHandle));
+        // SAFETY: external quiescence and canonical-slot ownership are caller obligations.
+        drop(unsafe { Box::from_raw(handle as *mut RelayKeypairHandle) });
         0
     }))
     .unwrap_or(FFI_PANIC)
@@ -324,14 +366,14 @@ pub unsafe extern "C" fn opaque_relay_keypair_get_public_key(
         if public_key.is_null() || key_buffer_size < PUBLIC_KEY_LENGTH {
             return OpaqueError::InvalidInput.to_c_int();
         }
-        let Some((kh, _kg)) = acquire_relay_keypair(handle) else {
-            return FFI_BUSY;
+        let (kh, _kg) = match acquire_relay_keypair(handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
         };
-        ptr::copy_nonoverlapping(
-            kh.keypair.public_key.as_ptr(),
-            public_key,
-            PUBLIC_KEY_LENGTH,
-        );
+        let public_key_copy = kh.keypair.public_key;
+        inject_test_panic("relay_keypair_public_key_before_commit");
+        // SAFETY: the output contract requires a writable range of PUBLIC_KEY_LENGTH bytes.
+        ptr::copy_nonoverlapping(public_key_copy.as_ptr(), public_key, PUBLIC_KEY_LENGTH);
         0
     }))
     .unwrap_or(FFI_PANIC)
@@ -368,8 +410,11 @@ pub unsafe extern "C" fn opaque_relay_create(
         if handle.is_null() {
             return OpaqueError::InvalidInput.to_c_int();
         }
-        let Some((kh, _kg)) = acquire_relay_keypair(keypair_handle) else {
-            return FFI_BUSY;
+        // SAFETY: validated above; the caller contract requires a writable out slot.
+        unsafe { *handle = ptr::null_mut() };
+        let (kh, _kg) = match acquire_relay_keypair(keypair_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
         };
         let result = OpaqueResponder::new(kh.keypair.clone(), kh.oprf_seed);
         drop(_kg);
@@ -380,6 +425,7 @@ pub unsafe extern "C" fn opaque_relay_create(
             responder,
             in_use: AtomicBool::new(false),
         });
+        inject_test_panic("relay_create_before_publish");
         *handle = Box::into_raw(boxed) as *mut std::ffi::c_void;
         0
     }))
@@ -392,7 +438,8 @@ pub unsafe extern "C" fn opaque_relay_create(
 ///
 /// `handle_ptr` must be a valid, non-null pointer to a `*mut c_void` that was
 /// previously set by `opaque_relay_create` or `opaque_relay_create_with_keys`.
-/// After this call the inner pointer is set to null, preventing double-free.
+/// After this call the inner pointer is set to null, preventing double-free. The caller must
+/// ensure that destruction does not overlap any operation through this handle or a copied alias.
 #[no_mangle]
 pub unsafe extern "C" fn opaque_relay_destroy(handle_ptr: *mut *mut std::ffi::c_void) {
     let _ = opaque_relay_try_destroy(handle_ptr);
@@ -415,11 +462,15 @@ pub unsafe extern "C" fn opaque_relay_try_destroy(handle_ptr: *mut *mut std::ffi
             return 0;
         }
         let in_use = &(*(handle as *const RelayHandle)).in_use;
-        if in_use.swap(true, Ordering::Acquire) {
+        if in_use
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
             return FFI_BUSY;
         }
         *handle_ptr = ptr::null_mut();
-        drop(Box::from_raw(handle as *mut RelayHandle));
+        // SAFETY: external quiescence and canonical-slot ownership are caller obligations.
+        drop(unsafe { Box::from_raw(handle as *mut RelayHandle) });
         0
     }))
     .unwrap_or(FFI_PANIC)
@@ -450,10 +501,13 @@ pub unsafe extern "C" fn opaque_relay_state_create(handle: *mut *mut std::ffi::c
         if handle.is_null() {
             return OpaqueError::InvalidInput.to_c_int();
         }
+        // SAFETY: validated above; the caller contract requires a writable out slot.
+        unsafe { *handle = ptr::null_mut() };
         let boxed = Box::new(RelayStateHandle {
             state: ResponderState::new(),
             in_use: AtomicBool::new(false),
         });
+        inject_test_panic("relay_state_create_before_publish");
         *handle = Box::into_raw(boxed) as *mut std::ffi::c_void;
         0
     }))
@@ -466,7 +520,8 @@ pub unsafe extern "C" fn opaque_relay_state_create(handle: *mut *mut std::ffi::c
 ///
 /// `handle_ptr` must be a valid, non-null pointer to a `*mut c_void` that was
 /// previously set by `opaque_relay_state_create`. After this call the inner
-/// pointer is set to null, preventing double-free.
+/// pointer is set to null, preventing double-free. The caller must ensure that destruction does
+/// not overlap any operation through this state handle or a copied alias.
 #[no_mangle]
 pub unsafe extern "C" fn opaque_relay_state_destroy(handle_ptr: *mut *mut std::ffi::c_void) {
     let _ = opaque_relay_state_try_destroy(handle_ptr);
@@ -491,11 +546,15 @@ pub unsafe extern "C" fn opaque_relay_state_try_destroy(
             return 0;
         }
         let in_use = &(*(handle as *const RelayStateHandle)).in_use;
-        if in_use.swap(true, Ordering::Acquire) {
+        if in_use
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
             return FFI_BUSY;
         }
         *handle_ptr = ptr::null_mut();
-        drop(Box::from_raw(handle as *mut RelayStateHandle));
+        // SAFETY: external quiescence and canonical-slot ownership are caller obligations.
+        drop(unsafe { Box::from_raw(handle as *mut RelayStateHandle) });
         0
     }))
     .unwrap_or(FFI_PANIC)
@@ -548,29 +607,52 @@ pub unsafe extern "C" fn opaque_relay_create_registration_response(
             || account_id_length > MAX_ACCOUNT_ID_LENGTH
             || response_data.is_null()
             || response_buffer_size < REGISTRATION_RESPONSE_WIRE_LENGTH
+            || ranges_overlap(
+                request_data,
+                request_length,
+                response_data.cast_const(),
+                REGISTRATION_RESPONSE_WIRE_LENGTH,
+            )
+            || ranges_overlap(
+                account_id,
+                account_id_length,
+                response_data.cast_const(),
+                REGISTRATION_RESPONSE_WIRE_LENGTH,
+            )
         {
             return OpaqueError::InvalidInput.to_c_int();
         }
 
-        let Some((rh, _rg)) = acquire_relay(relay_handle) else {
-            return FFI_BUSY;
+        let (rh, _rg) = match acquire_relay(relay_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
         };
 
-        let req = std::slice::from_raw_parts(request_data, request_length);
-        let aid = std::slice::from_raw_parts(account_id, account_id_length);
+        // SAFETY: validated readable extents are part of the public ABI contract.
+        let req = unsafe { std::slice::from_raw_parts(request_data, request_length) };
+        let aid = unsafe { std::slice::from_raw_parts(account_id, account_id_length) };
         let mut response = RegistrationResponse::new();
 
         match create_registration_response(&rh.responder, req, aid, &mut response) {
             Ok(()) => {
-                let out = std::slice::from_raw_parts_mut(response_data, response_buffer_size);
-                match protocol::write_registration_response(
+                let mut wire = Zeroizing::new([0u8; REGISTRATION_RESPONSE_WIRE_LENGTH]);
+                if let Err(error) = protocol::write_registration_response(
                     &response.data[..PUBLIC_KEY_LENGTH],
                     &response.data[PUBLIC_KEY_LENGTH..],
-                    out,
+                    &mut *wire,
                 ) {
-                    Ok(()) => 0,
-                    Err(e) => ffi_error_to_int(e),
+                    return ffi_error_to_int(error);
                 }
+                inject_test_panic("relay_registration_response_before_commit");
+                // SAFETY: output was validated as writable, sufficiently large, and disjoint.
+                unsafe {
+                    ptr::copy_nonoverlapping(
+                        wire.as_ptr(),
+                        response_data,
+                        REGISTRATION_RESPONSE_WIRE_LENGTH,
+                    )
+                };
+                0
             }
             Err(e) => ffi_error_to_int(e),
         }
@@ -615,30 +697,45 @@ pub unsafe extern "C" fn opaque_relay_build_credentials(
             || record_length != REGISTRATION_RECORD_LENGTH
             || credentials_out.is_null()
             || credentials_out_length < RESPONDER_CREDENTIALS_LENGTH
+            || ranges_overlap(
+                registration_record,
+                record_length,
+                credentials_out.cast_const(),
+                RESPONDER_CREDENTIALS_LENGTH,
+            )
         {
             return OpaqueError::InvalidInput.to_c_int();
         }
 
-        let record = std::slice::from_raw_parts(registration_record, record_length);
+        // SAFETY: validated readable extent is part of the public ABI contract.
+        let record = unsafe { std::slice::from_raw_parts(registration_record, record_length) };
         let mut creds = ResponderCredentials::new();
 
         match build_credentials(record, &mut creds) {
             Ok(()) => {}
             Err(e) => return ffi_error_to_int(e),
         }
-        let out = std::slice::from_raw_parts_mut(credentials_out, credentials_out_length);
-        let mut credential_storage = [0u8; opaque_core::types::REGISTRATION_CREDENTIAL_LENGTH];
+        let mut credential_storage =
+            Zeroizing::new([0u8; opaque_core::types::REGISTRATION_CREDENTIAL_LENGTH]);
         credential_storage[..opaque_core::types::MASKING_KEY_LENGTH]
             .copy_from_slice(&creds.masking_key);
         credential_storage[opaque_core::types::MASKING_KEY_LENGTH..]
             .copy_from_slice(&creds.envelope);
+        let mut wire = Zeroizing::new([0u8; RESPONDER_CREDENTIALS_LENGTH]);
         let write_result = protocol::write_registration_record(
-            &credential_storage,
+            &*credential_storage,
             &creds.initiator_public_key,
-            out,
+            &mut *wire,
         );
-        credential_storage.zeroize();
-        result_to_int(write_result)
+        if let Err(error) = write_result {
+            return ffi_error_to_int(error);
+        }
+        inject_test_panic("relay_build_credentials_before_commit");
+        // SAFETY: output was validated as writable, sufficiently large, and disjoint.
+        unsafe {
+            ptr::copy_nonoverlapping(wire.as_ptr(), credentials_out, RESPONDER_CREDENTIALS_LENGTH)
+        };
+        0
     }))
     .unwrap_or(FFI_PANIC)
 }
@@ -705,6 +802,13 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
             || account_id_length > MAX_ACCOUNT_ID_LENGTH
             || ke2_data.is_null()
             || ke2_buffer_size < KE2_LENGTH
+            || ranges_overlap(ke1_data, ke1_length, ke2_data.cast_const(), KE2_LENGTH)
+            || ranges_overlap(
+                account_id,
+                account_id_length,
+                ke2_data.cast_const(),
+                KE2_LENGTH,
+            )
         {
             return OpaqueError::InvalidInput.to_c_int();
         }
@@ -714,24 +818,29 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
                 if credentials_data.is_null() {
                     return OpaqueError::InvalidInput.to_c_int();
                 }
+                if ranges_overlap(
+                    credentials_data,
+                    credentials_length,
+                    ke2_data.cast_const(),
+                    KE2_LENGTH,
+                ) {
+                    return OpaqueError::InvalidInput.to_c_int();
+                }
             }
             _ => return OpaqueError::InvalidInput.to_c_int(),
         }
 
-        let Some((rh, _rg)) = acquire_relay(relay_handle) else {
-            return FFI_BUSY;
-        };
-        let Some((sh, _sg)) = acquire_relay_state(state_handle) else {
-            return FFI_BUSY;
+        let (rh, _rg) = match acquire_relay(relay_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
         };
 
-        let ke1 = std::slice::from_raw_parts(ke1_data, ke1_length);
-        let aid = std::slice::from_raw_parts(account_id, account_id_length);
-
-        let mut credential_wire = [0u8; RESPONDER_CREDENTIALS_LENGTH];
+        let mut credential_wire = Zeroizing::new([0u8; RESPONDER_CREDENTIALS_LENGTH]);
         match credentials_length {
             RESPONDER_CREDENTIALS_LENGTH => {
-                let input = std::slice::from_raw_parts(credentials_data, credentials_length);
+                // SAFETY: validated readable extent is part of the public ABI contract.
+                let input =
+                    unsafe { std::slice::from_raw_parts(credentials_data, credentials_length) };
                 credential_wire.copy_from_slice(input);
             }
             0 => {
@@ -740,7 +849,7 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
                 if protocol::write_registration_record(
                     &fake_credentials,
                     fake_public_key,
-                    &mut credential_wire,
+                    &mut *credential_wire,
                 )
                 .is_err()
                 {
@@ -750,7 +859,7 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
             _ => return OpaqueError::InvalidInput.to_c_int(),
         }
 
-        let record_view = match protocol::parse_registration_record(&credential_wire) {
+        let record_view = match protocol::parse_registration_record(&*credential_wire) {
             Ok(view) => view,
             Err(_) => return FFI_CORRUPTED_RECORD,
         };
@@ -775,27 +884,32 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
             _ => return OpaqueError::InvalidInput.to_c_int(),
         }
 
-        let mut ke2 = Ke2Message::new();
-
-        let result = match generate_ke2(&rh.responder, ke1, aid, &creds, &mut ke2, &mut sh.state) {
-            Ok(()) => {
-                let out = std::slice::from_raw_parts_mut(ke2_data, ke2_buffer_size);
-                let write_result = protocol::write_ke2(
-                    &ke2.responder_nonce,
-                    &ke2.responder_public_key,
-                    &ke2.credential_response,
-                    &ke2.responder_mac,
-                    &ke2.kem_ciphertext,
-                    out,
-                );
-                if write_result.is_err() {
-                    invalidate_relay_state(sh);
-                }
-                write_result
-            }
-            Err(e) => Err(e),
+        let (sh, _sg) = match acquire_relay_state(state_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
         };
-        result_to_int(result)
+
+        run_relay_stateful(sh, |sh| {
+            // SAFETY: validated readable extents are part of the public ABI contract.
+            let ke1 = unsafe { std::slice::from_raw_parts(ke1_data, ke1_length) };
+            let aid = unsafe { std::slice::from_raw_parts(account_id, account_id_length) };
+            let mut ke2 = Ke2Message::new();
+            generate_ke2(&rh.responder, ke1, aid, &creds, &mut ke2, &mut sh.state)?;
+
+            let mut wire = Zeroizing::new([0u8; KE2_LENGTH]);
+            protocol::write_ke2(
+                &ke2.responder_nonce,
+                &ke2.responder_public_key,
+                &ke2.credential_response,
+                &ke2.responder_mac,
+                &ke2.kem_ciphertext,
+                &mut *wire,
+            )?;
+            inject_test_panic("relay_generate_ke2_before_commit");
+            // SAFETY: output was validated as writable, sufficiently large, and disjoint.
+            unsafe { ptr::copy_nonoverlapping(wire.as_ptr(), ke2_data, KE2_LENGTH) };
+            Ok(())
+        })
     }))
     .unwrap_or(FFI_PANIC)
 }
@@ -833,7 +947,7 @@ pub unsafe extern "C" fn opaque_relay_generate_ke2(
 ///   bytes.
 #[no_mangle]
 pub unsafe extern "C" fn opaque_relay_finish(
-    _relay_handle: *const std::ffi::c_void,
+    relay_handle: *const std::ffi::c_void,
     ke3_data: *const u8,
     ke3_length: usize,
     state_handle: *mut std::ffi::c_void,
@@ -845,26 +959,30 @@ pub unsafe extern "C" fn opaque_relay_finish(
             || ke3_length != KE3_LENGTH
             || session_key.is_null()
             || session_key_buffer_size < HASH_LENGTH
+            || ranges_overlap(ke3_data, ke3_length, session_key.cast_const(), HASH_LENGTH)
         {
             return OpaqueError::InvalidInput.to_c_int();
         }
 
-        let Some((sh, _sg)) = acquire_relay_state(state_handle) else {
-            return FFI_BUSY;
+        let (_rh, _rg) = match acquire_relay(relay_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
+        };
+        let (sh, _sg) = match acquire_relay_state(state_handle) {
+            Ok(value) => value,
+            Err(error) => return handle_access_to_int(error),
         };
 
-        let ke3 = std::slice::from_raw_parts(ke3_data, ke3_length);
-        let mut sk = [0u8; HASH_LENGTH];
-
-        let rc = match responder_finish(ke3, &mut sh.state, &mut sk) {
-            Ok(()) => {
-                ptr::copy_nonoverlapping(sk.as_ptr(), session_key, HASH_LENGTH);
-                0
-            }
-            Err(e) => ffi_error_to_int(e),
-        };
-        sk.zeroize();
-        rc
+        run_relay_stateful(sh, |sh| {
+            // SAFETY: validated readable extent is part of the public ABI contract.
+            let ke3 = unsafe { std::slice::from_raw_parts(ke3_data, ke3_length) };
+            let mut sk = Zeroizing::new([0u8; HASH_LENGTH]);
+            responder_finish(ke3, &mut sh.state, &mut sk)?;
+            inject_test_panic("relay_finish_before_commit");
+            // SAFETY: output was validated as writable, sufficiently large, and disjoint.
+            unsafe { ptr::copy_nonoverlapping(sk.as_ptr(), session_key, HASH_LENGTH) };
+            Ok(())
+        })
     }))
     .unwrap_or(FFI_PANIC)
 }
@@ -912,20 +1030,31 @@ pub unsafe extern "C" fn opaque_relay_create_with_keys(
     handle: *mut *mut std::ffi::c_void,
 ) -> i32 {
     panic::catch_unwind(AssertUnwindSafe(|| {
+        if handle.is_null() {
+            return OpaqueError::InvalidInput.to_c_int();
+        }
+        // SAFETY: validated above; the caller contract requires a writable out slot.
+        unsafe { *handle = ptr::null_mut() };
+        let handle_bytes = handle.cast::<u8>();
+        let handle_size = std::mem::size_of::<*mut std::ffi::c_void>();
         if private_key.is_null()
             || private_key_len != PRIVATE_KEY_LENGTH
             || public_key.is_null()
             || public_key_len != PUBLIC_KEY_LENGTH
             || oprf_seed_ptr.is_null()
             || oprf_seed_len != OPRF_SEED_LENGTH
-            || handle.is_null()
+            || ranges_overlap(private_key, private_key_len, handle_bytes, handle_size)
+            || ranges_overlap(public_key, public_key_len, handle_bytes, handle_size)
+            || ranges_overlap(oprf_seed_ptr, oprf_seed_len, handle_bytes, handle_size)
         {
             return OpaqueError::InvalidInput.to_c_int();
         }
 
-        let sk = std::slice::from_raw_parts(private_key, private_key_len);
-        let pk = std::slice::from_raw_parts(public_key, public_key_len);
-        let seed_slice = std::slice::from_raw_parts(oprf_seed_ptr, OPRF_SEED_LENGTH);
+        // SAFETY: all three pointers and exact readable extents were validated above and are
+        // required to remain live and disjoint from the output slot by the public contract.
+        let sk = unsafe { std::slice::from_raw_parts(private_key, private_key_len) };
+        let pk = unsafe { std::slice::from_raw_parts(public_key, public_key_len) };
+        let seed_slice = unsafe { std::slice::from_raw_parts(oprf_seed_ptr, OPRF_SEED_LENGTH) };
         let mut oprf_seed = Zeroizing::new([0u8; OPRF_SEED_LENGTH]);
         oprf_seed.copy_from_slice(seed_slice);
 
@@ -939,6 +1068,7 @@ pub unsafe extern "C" fn opaque_relay_create_with_keys(
             responder,
             in_use: AtomicBool::new(false),
         });
+        inject_test_panic("relay_create_with_keys_before_publish");
         *handle = Box::into_raw(boxed) as *mut std::ffi::c_void;
         0
     }))
@@ -1006,6 +1136,208 @@ mod tests {
         opaque_agent_create, opaque_agent_destroy, opaque_agent_generate_ke1,
         opaque_agent_generate_ke3, opaque_agent_state_create, opaque_agent_state_destroy,
     };
+    use crate::set_ffi_panic_point;
+    use opaque_core::types::is_all_zero;
+
+    #[test]
+    fn relay_constructor_panic_leaves_out_slot_null() {
+        let mut keypair = std::ptr::dangling_mut::<std::ffi::c_void>();
+        set_ffi_panic_point(Some("relay_keypair_generate_before_publish"));
+
+        // SAFETY: the test-owned output slot satisfies the public contract.
+        let rc = unsafe { opaque_relay_keypair_generate(&mut keypair) };
+
+        assert_eq!(rc, FFI_PANIC);
+        assert!(keypair.is_null());
+    }
+
+    #[test]
+    fn remaining_relay_constructor_panics_leave_out_slots_null() {
+        unsafe {
+            let mut keypair = ptr::null_mut();
+            assert_eq!(opaque_relay_keypair_generate(&mut keypair), 0);
+
+            let mut relay = std::ptr::dangling_mut::<std::ffi::c_void>();
+            set_ffi_panic_point(Some("relay_create_before_publish"));
+            assert_eq!(opaque_relay_create(keypair, &mut relay), FFI_PANIC);
+            assert!(relay.is_null());
+
+            let mut state = std::ptr::dangling_mut::<std::ffi::c_void>();
+            set_ffi_panic_point(Some("relay_state_create_before_publish"));
+            assert_eq!(opaque_relay_state_create(&mut state), FFI_PANIC);
+            assert!(state.is_null());
+
+            let restored_keypair = ResponderKeyPair::generate().expect("keypair generation");
+            let seed = [0x42u8; OPRF_SEED_LENGTH];
+            let mut restored_relay = std::ptr::dangling_mut::<std::ffi::c_void>();
+            set_ffi_panic_point(Some("relay_create_with_keys_before_publish"));
+            assert_eq!(
+                opaque_relay_create_with_keys(
+                    restored_keypair.private_key.as_ptr(),
+                    restored_keypair.private_key.len(),
+                    restored_keypair.public_key.as_ptr(),
+                    restored_keypair.public_key.len(),
+                    seed.as_ptr(),
+                    seed.len(),
+                    &mut restored_relay,
+                ),
+                FFI_PANIC
+            );
+            assert!(restored_relay.is_null());
+
+            opaque_relay_keypair_destroy(&mut keypair);
+        }
+    }
+
+    #[test]
+    fn relay_null_and_busy_handles_have_distinct_status_codes() {
+        unsafe {
+            let mut keypair = ptr::null_mut();
+            assert_eq!(opaque_relay_keypair_generate(&mut keypair), 0);
+            let mut sentinel = [0xA5u8; PUBLIC_KEY_LENGTH];
+
+            // SAFETY: this unit test owns the live handle and simulates an admitted peer call.
+            (*(keypair as *mut RelayKeypairHandle))
+                .in_use
+                .store(true, Ordering::Release);
+            let busy_rc =
+                opaque_relay_keypair_get_public_key(keypair, sentinel.as_mut_ptr(), sentinel.len());
+            // SAFETY: this unit test owns the handle and restores it before destruction.
+            (*(keypair as *mut RelayKeypairHandle))
+                .in_use
+                .store(false, Ordering::Release);
+            let null_rc = opaque_relay_keypair_get_public_key(
+                ptr::null_mut(),
+                sentinel.as_mut_ptr(),
+                sentinel.len(),
+            );
+
+            assert_eq!(busy_rc, FFI_BUSY);
+            assert_eq!(null_rc, OpaqueError::InvalidInput.to_c_int());
+            assert!(sentinel.iter().all(|byte| *byte == 0xA5));
+            opaque_relay_keypair_destroy(&mut keypair);
+        }
+    }
+
+    #[test]
+    fn corrupted_credentials_are_rejected_before_state_admission() {
+        unsafe {
+            let mut keypair = ptr::null_mut();
+            assert_eq!(opaque_relay_keypair_generate(&mut keypair), 0);
+            let mut relay = ptr::null_mut();
+            assert_eq!(opaque_relay_create(keypair, &mut relay), 0);
+            let mut state = ptr::null_mut();
+            assert_eq!(opaque_relay_state_create(&mut state), 0);
+
+            let ke1 = [0u8; KE1_LENGTH];
+            let credentials = [0u8; RESPONDER_CREDENTIALS_LENGTH];
+            let account_id = b"alice@example.com";
+            let mut sentinel = [0xA5u8; KE2_LENGTH];
+            let rc = opaque_relay_generate_ke2(
+                relay,
+                ke1.as_ptr(),
+                ke1.len(),
+                account_id.as_ptr(),
+                account_id.len(),
+                credentials.as_ptr(),
+                credentials.len(),
+                sentinel.as_mut_ptr(),
+                sentinel.len(),
+                state,
+            );
+
+            assert_eq!(rc, FFI_CORRUPTED_RECORD);
+            assert!(sentinel.iter().all(|byte| *byte == 0xA5));
+            let state_ref = &*(state as *const RelayStateHandle);
+            assert_eq!(state_ref.state.phase, opaque_relay::ResponderPhase::Created);
+            opaque_relay_state_destroy(&mut state);
+            opaque_relay_destroy(&mut relay);
+            opaque_relay_keypair_destroy(&mut keypair);
+        }
+    }
+
+    #[test]
+    fn caught_relay_panic_terminalizes_state_and_preserves_output() {
+        unsafe {
+            let mut keypair = ptr::null_mut();
+            assert_eq!(opaque_relay_keypair_generate(&mut keypair), 0);
+            let mut relay_public_key = [0u8; PUBLIC_KEY_LENGTH];
+            assert_eq!(
+                opaque_relay_keypair_get_public_key(
+                    keypair,
+                    relay_public_key.as_mut_ptr(),
+                    relay_public_key.len(),
+                ),
+                0
+            );
+            let mut relay = ptr::null_mut();
+            assert_eq!(opaque_relay_create(keypair, &mut relay), 0);
+
+            let mut agent = ptr::null_mut();
+            assert_eq!(
+                opaque_agent_create(
+                    relay_public_key.as_ptr(),
+                    relay_public_key.len(),
+                    &mut agent,
+                ),
+                0
+            );
+            let mut agent_state = ptr::null_mut();
+            assert_eq!(opaque_agent_state_create(&mut agent_state), 0);
+            let password = b"correct horse battery staple";
+            let account_id = b"alice@example.com";
+            let mut ke1 = [0u8; KE1_LENGTH];
+            assert_eq!(
+                opaque_agent_generate_ke1(
+                    agent,
+                    password.as_ptr(),
+                    password.len(),
+                    account_id.as_ptr(),
+                    account_id.len(),
+                    agent_state,
+                    ke1.as_mut_ptr(),
+                    ke1.len(),
+                ),
+                0
+            );
+
+            let mut relay_state = ptr::null_mut();
+            assert_eq!(opaque_relay_state_create(&mut relay_state), 0);
+            let mut sentinel = [0xA5u8; KE2_LENGTH];
+            set_ffi_panic_point(Some("relay_generate_ke2_before_commit"));
+            let rc = opaque_relay_generate_ke2(
+                relay,
+                ke1.as_ptr(),
+                ke1.len(),
+                account_id.as_ptr(),
+                account_id.len(),
+                ptr::null(),
+                0,
+                sentinel.as_mut_ptr(),
+                sentinel.len(),
+                relay_state,
+            );
+
+            assert_eq!(rc, FFI_PANIC);
+            assert!(sentinel.iter().all(|byte| *byte == 0xA5));
+            let state_ref = &*(relay_state as *const RelayStateHandle);
+            assert_eq!(
+                state_ref.state.phase,
+                opaque_relay::ResponderPhase::Finished
+            );
+            assert!(is_all_zero(state_ref.state.responder_private_key()));
+            assert!(is_all_zero(
+                state_ref.state.responder_ephemeral_private_key()
+            ));
+            assert!(is_all_zero(state_ref.state.session_key()));
+
+            opaque_agent_state_destroy(&mut agent_state);
+            opaque_agent_destroy(&mut agent);
+            opaque_relay_state_destroy(&mut relay_state);
+            opaque_relay_destroy(&mut relay);
+            opaque_relay_keypair_destroy(&mut keypair);
+        }
+    }
 
     #[test]
     fn ffi_unknown_user_returns_fake_ke2() {
