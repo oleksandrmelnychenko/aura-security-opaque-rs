@@ -1411,12 +1411,19 @@ mod tests {
                     }
                 };
 
-                assert_ne!(rc, 0, "unexpected success for {phase:?} × {operation:?}");
+                assert_eq!(
+                    rc,
+                    OpaqueError::ValidationError.to_c_int(),
+                    "phase gate returned an unexpected status for {phase:?} × {operation:?}"
+                );
                 assert!(primary.iter().all(|byte| *byte == 0xA5));
                 assert!(secondary.iter().all(|byte| *byte == 0xA5));
                 // SAFETY: the admitted invalid-phase call leaves a live terminalized handle.
                 let state_ref = unsafe { &*(state as *const AgentStateHandle) };
                 assert_eq!(state_ref.state.phase, InitiatorPhase::Finished);
+                println!(
+                    "MATRIX_CELL side=agent phase={phase:?} operation={operation:?} relation=invalid_phase status={rc} output=unchanged post_phase=Finished fixture=phase_tag"
+                );
                 executed += 1;
 
                 // SAFETY: handles are live, quiescent, canonical, and test-owned.
