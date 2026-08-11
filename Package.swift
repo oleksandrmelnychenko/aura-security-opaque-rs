@@ -18,11 +18,6 @@ let package = Package(
         .binaryTarget(
             name: "AuraOPAQUEBinary",
             path: "dist/apple/AuraOPAQUE.xcframework"
-        ),
-        .target(
-            name: "AuraOPAQUESwift",
-            dependencies: ["AuraOPAQUEBinary"],
-            path: "swift/Sources/AuraOPAQUE"
         )
     ]
 )

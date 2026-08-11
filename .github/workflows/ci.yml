@@ -106,8 +106,10 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - name: Build Swift package
-        run: swift build
+        run: swift build --package-path tests/swift-package-smoke
 
   security-docs:
     name: Security Documentation
