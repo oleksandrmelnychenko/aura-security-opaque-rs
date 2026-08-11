@@ -3,9 +3,6 @@
 
 use std::time::Instant;
 
-#[cfg(test)]
-use std::time::Duration;
-
 use opaque_core::types::{
     pq, OpaqueResult, EXPORT_KEY_LENGTH, HASH_LENGTH, MAC_LENGTH, MAX_SECURE_KEY_LENGTH,
     NONCE_LENGTH, PRIVATE_KEY_LENGTH, PUBLIC_KEY_LENGTH, REGISTRATION_CREDENTIAL_LENGTH,
@@ -35,6 +32,9 @@ pub struct InitiatorState {
 
     #[zeroize(skip)]
     created_at: Instant,
+
+    #[cfg(test)]
+    forced_expired: bool,
 
     pub(crate) secure_key: [u8; MAX_SECURE_KEY_LENGTH],
 
@@ -77,6 +77,10 @@ impl InitiatorState {
         ) {
             return false;
         }
+        #[cfg(test)]
+        if self.forced_expired {
+            return true;
+        }
         Instant::now()
             .checked_duration_since(self.created_at)
             .is_none_or(|d| d.as_secs() >= STATE_MAX_LIFETIME_SECS)
@@ -84,6 +88,10 @@ impl InitiatorState {
 
     pub(crate) fn refresh_deadline(&mut self) {
         self.created_at = Instant::now();
+        #[cfg(test)]
+        {
+            self.forced_expired = false;
+        }
     }
 
     pub fn initiator_private_key(&self) -> &[u8; PRIVATE_KEY_LENGTH] {
@@ -125,13 +133,15 @@ impl InitiatorState {
 
     #[cfg(test)]
     pub(crate) fn expire_for_test(&mut self) {
-        self.created_at = Instant::now() - Duration::from_secs(STATE_MAX_LIFETIME_SECS + 1);
+        self.forced_expired = true;
     }
 
     pub fn new() -> Self {
         Self {
             phase: InitiatorPhase::Created,
             created_at: Instant::now(),
+            #[cfg(test)]
+            forced_expired: false,
             secure_key: [0u8; MAX_SECURE_KEY_LENGTH],
             secure_key_len: 0,
             initiator_private_key: [0u8; PRIVATE_KEY_LENGTH],

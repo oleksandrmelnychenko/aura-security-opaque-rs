@@ -3,9 +3,6 @@
 
 use std::time::Instant;
 
-#[cfg(test)]
-use std::time::Duration;
-
 use opaque_core::oprf::{InMemoryEvaluator, OprfEvaluator};
 use opaque_core::types::{
     constant_time_eq, pq, OpaqueError, OpaqueResult, CREDENTIAL_RESPONSE_LENGTH, ENVELOPE_LENGTH,
@@ -30,6 +27,9 @@ pub struct ResponderState {
 
     #[zeroize(skip)]
     created_at: Instant,
+
+    #[cfg(test)]
+    forced_expired: bool,
 
     pub(crate) responder_private_key: [u8; PRIVATE_KEY_LENGTH],
 
@@ -59,6 +59,10 @@ impl ResponderState {
         ) {
             return false;
         }
+        #[cfg(test)]
+        if self.forced_expired {
+            return true;
+        }
         Instant::now()
             .checked_duration_since(self.created_at)
             .is_none_or(|d| d.as_secs() >= STATE_MAX_LIFETIME_SECS)
@@ -66,6 +70,10 @@ impl ResponderState {
 
     pub(crate) fn refresh_deadline(&mut self) {
         self.created_at = Instant::now();
+        #[cfg(test)]
+        {
+            self.forced_expired = false;
+        }
     }
 
     pub fn responder_private_key(&self) -> &[u8; PRIVATE_KEY_LENGTH] {
@@ -100,13 +108,15 @@ impl ResponderState {
 
     #[cfg(test)]
     pub(crate) fn expire_for_test(&mut self) {
-        self.created_at = Instant::now() - Duration::from_secs(STATE_MAX_LIFETIME_SECS + 1);
+        self.forced_expired = true;
     }
 
     pub fn new() -> Self {
         Self {
             phase: ResponderPhase::Created,
             created_at: Instant::now(),
+            #[cfg(test)]
+            forced_expired: false,
             responder_private_key: [0u8; PRIVATE_KEY_LENGTH],
             responder_public_key: [0u8; PUBLIC_KEY_LENGTH],
             responder_ephemeral_private_key: [0u8; PRIVATE_KEY_LENGTH],
