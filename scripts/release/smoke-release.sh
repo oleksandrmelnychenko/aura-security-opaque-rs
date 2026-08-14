@@ -18,6 +18,7 @@ cc "$ROOT/tests/c/ffi_smoke.c" \
   -o /tmp/aura_opaque_ffi_smoke
 /tmp/aura_opaque_ffi_smoke
 
-swift build --package-path "$ROOT"
+bash "$ROOT/scripts/release/build-apple-xcframework.sh"
+swift build --package-path "$ROOT/tests/swift-package-smoke"
 
 echo "Release smoke checks passed."
