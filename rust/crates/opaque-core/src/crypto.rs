@@ -455,7 +455,10 @@ pub fn decrypt_envelope(
 #[inline]
 pub fn random_nonzero_scalar() -> OpaqueResult<[u8; PRIVATE_KEY_LENGTH]> {
     for _ in 0..256 {
-        let mut scalar = Scalar::random(&mut rand_core::OsRng);
+        let mut wide = [0u8; 64];
+        random_bytes(&mut wide)?;
+        let mut scalar = Scalar::from_bytes_mod_order_wide(&wide);
+        wide.zeroize();
         let bytes = scalar.to_bytes();
         scalar.zeroize();
         if !is_all_zero(&bytes) {

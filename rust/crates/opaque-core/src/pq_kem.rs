@@ -3,7 +3,9 @@
 
 use crate::crypto;
 use crate::types::{pq, pq_labels, OpaqueError, OpaqueResult, CLASSICAL_IKM_LENGTH, HASH_LENGTH};
-use ml_kem::{EncodedSizeUser, KemCore, MlKem768};
+#[allow(deprecated)]
+use ml_kem::ExpandedKeyEncoding;
+use ml_kem::{Decapsulate, Encapsulate, Kem, KeyExport, MlKem768};
 use zeroize::Zeroize;
 
 const _: () = assert!(
@@ -11,9 +13,9 @@ const _: () = assert!(
     "labeled_transcript stack buffer overflow"
 );
 
-type EK = <MlKem768 as KemCore>::EncapsulationKey;
+type EK = <MlKem768 as Kem>::EncapsulationKey;
 
-type DK = <MlKem768 as KemCore>::DecapsulationKey;
+type DK = <MlKem768 as Kem>::DecapsulationKey;
 
 pub fn keypair_generate(public_key: &mut [u8], secret_key: &mut [u8]) -> OpaqueResult<()> {
     if public_key.len() != pq::KEM_PUBLIC_KEY_LENGTH
@@ -22,12 +24,12 @@ pub fn keypair_generate(public_key: &mut [u8], secret_key: &mut [u8]) -> OpaqueR
         return Err(OpaqueError::InvalidKemInput);
     }
 
-    let mut rng = rand_core::OsRng;
-    let (dk, ek) = MlKem768::generate(&mut rng);
+    let (dk, ek) = MlKem768::generate_keypair();
 
-    public_key.copy_from_slice(ek.as_bytes().as_ref());
-    let mut dk_bytes = dk.as_bytes().to_vec();
-    secret_key.copy_from_slice(&dk_bytes);
+    public_key.copy_from_slice(ek.to_bytes().as_ref());
+    #[allow(deprecated)]
+    let mut dk_bytes = dk.to_expanded_bytes();
+    secret_key.copy_from_slice(dk_bytes.as_ref());
     dk_bytes.zeroize();
     drop(dk);
 
@@ -39,8 +41,6 @@ pub fn encapsulate(
     ciphertext: &mut [u8],
     shared_secret: &mut [u8],
 ) -> OpaqueResult<()> {
-    use ml_kem::kem::Encapsulate;
-
     if public_key.len() != pq::KEM_PUBLIC_KEY_LENGTH
         || ciphertext.len() != pq::KEM_CIPHERTEXT_LENGTH
         || shared_secret.len() != pq::KEM_SHARED_SECRET_LENGTH
@@ -48,18 +48,15 @@ pub fn encapsulate(
         return Err(OpaqueError::InvalidKemInput);
     }
 
-    let ek_array: ml_kem::Encoded<EK> = public_key
+    let ek_array: ml_kem::Key<EK> = public_key
         .try_into()
         .map_err(|_| OpaqueError::InvalidKemInput)?;
-    let ek = EK::from_bytes(&ek_array);
-    if ek.as_bytes() != ek_array {
+    let ek = EK::new(&ek_array).map_err(|_| OpaqueError::InvalidKemInput)?;
+    if ek.to_bytes() != ek_array {
         return Err(OpaqueError::InvalidKemInput);
     }
 
-    let mut rng = rand_core::OsRng;
-    let (ct, ss) = ek
-        .encapsulate(&mut rng)
-        .map_err(|_| OpaqueError::CryptoError)?;
+    let (ct, ss) = ek.encapsulate();
 
     ciphertext.copy_from_slice(ct.as_ref());
     shared_secret.copy_from_slice(ss.as_ref());
@@ -72,8 +69,6 @@ pub fn decapsulate(
     ciphertext: &[u8],
     shared_secret: &mut [u8],
 ) -> OpaqueResult<()> {
-    use ml_kem::kem::Decapsulate;
-
     if secret_key.len() != pq::KEM_SECRET_KEY_LENGTH
         || ciphertext.len() != pq::KEM_CIPHERTEXT_LENGTH
         || shared_secret.len() != pq::KEM_SHARED_SECRET_LENGTH
@@ -81,7 +76,8 @@ pub fn decapsulate(
         return Err(OpaqueError::InvalidKemInput);
     }
 
-    let mut dk_array: ml_kem::Encoded<DK> = secret_key
+    #[allow(deprecated)]
+    let mut dk_array: ml_kem::ExpandedDecapsulationKey<MlKem768> = secret_key
         .try_into()
         .map_err(|_| OpaqueError::InvalidKemInput)?;
     let ct: ml_kem::Ciphertext<MlKem768> = ciphertext
@@ -89,10 +85,15 @@ pub fn decapsulate(
         .map_err(|_| OpaqueError::InvalidKemInput)?;
 
     let ss = {
-        let dk = DK::from_bytes(&dk_array);
-        let result = dk.decapsulate(&ct).map_err(|_| OpaqueError::CryptoError);
+        #[allow(deprecated)]
+        let dk = DK::from_expanded_bytes(&dk_array).map_err(|_| OpaqueError::InvalidKemInput)?;
+        #[allow(deprecated)]
+        if dk.to_expanded_bytes() != dk_array {
+            return Err(OpaqueError::InvalidKemInput);
+        }
+        let result = dk.decapsulate(&ct);
         drop(dk);
-        result?
+        result
     };
     dk_array.zeroize();
     shared_secret.copy_from_slice(ss.as_ref());
