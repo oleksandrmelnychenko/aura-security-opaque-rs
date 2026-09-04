@@ -699,7 +699,7 @@ dependencies = [
  "hex",
  "hmac",
  "ml-kem",
- "rand_core 0.6.4",
+ "rand_core 0.10.1",
  "sha2",
  "subtle",
  "thiserror",
